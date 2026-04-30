@@ -1,0 +1,1709 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>대리점 썸네일/이미지 제작 툴</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500;700;900&family=Noto+Serif+KR:wght@400;700;900&family=Black+Han+Sans&family=Jua&family=Do+Hyeon&family=Gowun+Dodum&family=Nanum+Gothic:wght@400;700;800&family=Gaegu:wght@300;400;700&family=Single+Day&family=Gugi&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0a;
+    --surface: #161616;
+    --surface-2: #1f1f1f;
+    --border: #2a2a2a;
+    --border-strong: #3a3a3a;
+    --text: #f5f5f5;
+    --text-dim: #8a8a8a;
+    --text-faint: #5a5a5a;
+    --accent: #FCD34D;
+    --accent-dim: #8a6f10;
+    --danger: #ef4444;
+    --select: #3b82f6;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: 20px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .header {
+    max-width: 1700px;
+    margin: 0 auto 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header h1::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+  .header p {
+    color: var(--text-dim);
+    margin-top: 6px;
+    font-size: 13px;
+    margin-left: 16px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 20px;
+    max-width: 1700px;
+    margin: 0 auto;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+  .controls::-webkit-scrollbar { width: 6px; }
+  .controls::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .section-header .num {
+    width: 20px; height: 20px;
+    background: var(--accent);
+    color: #1a1100;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 1px dashed var(--border-strong);
+    border-radius: 6px;
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .upload-zone:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .upload-zone.has-file {
+    padding: 8px;
+    border-style: solid;
+    border-color: var(--border);
+  }
+  .upload-zone img {
+    max-width: 100%;
+    max-height: 70px;
+    border-radius: 3px;
+    display: block;
+    margin: 0 auto;
+  }
+  .upload-zone .filename {
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-faint);
+    word-break: break-all;
+  }
+
+  input[type="text"], input[type="number"], textarea, select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 13px;
+    transition: border-color 0.15s;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--bg);
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+  textarea { resize: vertical; line-height: 1.5; min-height: 50px; }
+  input[type="color"] {
+    width: 100%;
+    height: 32px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  /* Color preset palette */
+  .color-presets {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .color-swatch {
+    aspect-ratio: 1;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    padding: 0;
+  }
+  .color-swatch:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .color-swatch.white { background: #ffffff; }
+  .color-swatch.black { background: #000000; }
+  .color-swatch.gray  { background: #9ca3af; }
+  .color-swatch.yellow{ background: #FCD34D; }
+  .color-swatch.orange{ background: #f97316; }
+  .color-swatch.red   { background: #ef4444; }
+  .color-swatch.blue  { background: #3b82f6; }
+  .color-swatch.navy  { background: #1e3a8a; }
+  .color-swatch.green { background: #10b981; }
+  .color-swatch.pink  { background: #ec4899; }
+  .color-swatch.purple{ background: #8b5cf6; }
+  .color-swatch.brown { background: #78350f; }
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  /* Templates grid */
+  .templates-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .template-btn {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0;
+    cursor: pointer;
+    transition: all 0.15s;
+    overflow: hidden;
+    aspect-ratio: 1.2;
+    position: relative;
+  }
+  .template-btn:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .template-btn.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .template-thumb {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+    position: relative;
+    display: block;
+  }
+  .template-name {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.85);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 6px;
+    text-align: center;
+    letter-spacing: -0.01em;
+  }
+
+  /* Inline rows */
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+
+  /* Toggle buttons */
+  .btn-group {
+    display: flex;
+    gap: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px;
+  }
+  .btn-group button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 6px 4px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+  }
+  .btn-group button:hover { color: var(--text); }
+  .btn-group button.active {
+    background: var(--accent);
+    color: #1a1100;
+  }
+
+  /* Add element buttons */
+  .add-element-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .add-btn {
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .add-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .help {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #1a1100;
+    border: none;
+    padding: 13px 20px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+    letter-spacing: -0.01em;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #FFDA5C;
+    transform: translateY(-1px);
+  }
+  .btn-primary:disabled {
+    background: var(--border);
+    color: var(--text-faint);
+    cursor: not-allowed;
+  }
+
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+  }
+  .btn-danger:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  /* Preview */
+  .preview-area {
+    background:
+      linear-gradient(45deg, #131313 25%, transparent 25%, transparent 75%, #131313 75%),
+      linear-gradient(45deg, #131313 25%, transparent 25%, transparent 75%, #131313 75%),
+      #0d0d0d;
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 30px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    height: calc(100vh - 110px);
+    overflow: auto;
+    position: sticky;
+    top: 20px;
+  }
+
+  .stage-wrap {
+    position: relative;
+  }
+
+  .stage {
+    position: relative;
+    background: #1a1a1a;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    overflow: hidden;
+    transform-origin: top center;
+  }
+
+  .stage .bg-layer {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .stage .empty-bg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    font-size: 28px;
+    background: repeating-linear-gradient(45deg, #1a1a1a 0 20px, #161616 20px 40px);
+  }
+
+  /* Elements */
+  .el {
+    position: absolute;
+    cursor: move;
+    user-select: none;
+    -webkit-user-select: none;
+    transform: translate(-50%, -50%);
+    /* All sizes are in canvas coordinates; the stage is scaled with CSS transform */
+  }
+  .el-text {
+    white-space: pre;
+    line-height: 1.15;
+    pointer-events: auto;
+  }
+  .el-product {
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+  .el.selected {
+    outline: 2px dashed var(--select);
+    outline-offset: 4px;
+  }
+  .el.selected .resize-handle {
+    display: block;
+  }
+  .resize-handle {
+    display: none;
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: var(--select);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    z-index: 100;
+  }
+  .resize-handle.tl { top: -7px; left: -7px; cursor: nwse-resize; }
+  .resize-handle.tr { top: -7px; right: -7px; cursor: nesw-resize; }
+  .resize-handle.bl { bottom: -7px; left: -7px; cursor: nesw-resize; }
+  .resize-handle.br { bottom: -7px; right: -7px; cursor: nwse-resize; }
+
+  /* Layer list */
+  .layer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .layer-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .layer-row:hover { border-color: var(--border-strong); }
+  .layer-row.active {
+    border-color: var(--select);
+    background: rgba(59, 130, 246, 0.08);
+  }
+  .layer-row .layer-icon {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .layer-row .layer-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .layer-row .layer-del {
+    width: 22px; height: 22px;
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 14px;
+  }
+  .layer-row .layer-del:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
+
+  .empty-hint {
+    color: var(--text-faint);
+    font-size: 12px;
+    text-align: center;
+    padding: 12px;
+  }
+
+  .panel-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  /* Hidden canvas for export */
+  #exportCanvas { display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>대리점 썸네일/이미지 제작 툴</h1>
+  <p>배경·제품 업로드 → 템플릿 선택 → 텍스트 드래그·크기 조절 → PNG 다운로드</p>
+</div>
+
+<div class="layout">
+  <!-- ============== LEFT: CONTROLS ============== -->
+  <div class="controls">
+
+    <!-- 1. Canvas size -->
+    <div class="section">
+      <div class="section-header"><span class="num">1</span> 캔버스 사이즈</div>
+      <div class="field">
+        <select id="canvasSize">
+          <option value="1080x1080">정사각형 1080 × 1080 (네이버/인스타)</option>
+          <option value="1080x1350">세로형 1080 × 1350 (인스타 포스트)</option>
+          <option value="1200x800">가로형 1200 × 800 (블로그 썸네일)</option>
+          <option value="1000x1000">스마트스토어 1000 × 1000</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 2. Backgrounds -->
+    <div class="section">
+      <div class="section-header"><span class="num">2</span> 배경 이미지</div>
+      <div class="upload-zone" id="bgZone">
+        <input type="file" id="bgInput" accept="image/*" hidden>
+        <div id="bgText">+ 클릭해서 배경 업로드</div>
+        <img id="bgPreview" style="display:none;" alt="">
+        <div class="filename" id="bgFilename"></div>
+      </div>
+      <div class="help">권장: 단색 / 그라데이션 / 작업현장 사진 등</div>
+    </div>
+
+    <!-- 3. Product image -->
+    <div class="section">
+      <div class="section-header"><span class="num">3</span> 제품 이미지</div>
+      <div class="upload-zone" id="prodZone">
+        <input type="file" id="prodInput" accept="image/*" hidden>
+        <div id="prodText">+ 클릭해서 제품 이미지 업로드</div>
+        <img id="prodPreview" style="display:none;" alt="">
+        <div class="filename" id="prodFilename"></div>
+      </div>
+      <div class="help">PNG(투명배경) 권장</div>
+    </div>
+
+    <!-- 4. Templates -->
+    <div class="section">
+      <div class="section-header"><span class="num">4</span> 기본 템플릿 (10종)</div>
+      <div class="templates-grid" id="templatesGrid"></div>
+    </div>
+
+    <!-- 5. Add elements -->
+    <div class="section">
+      <div class="section-header"><span class="num">5</span> 요소 추가 / 레이어</div>
+      <div class="add-element-row" style="margin-bottom:10px;">
+        <button class="add-btn" id="addTextBtn">+ 텍스트</button>
+        <button class="add-btn" id="addBoxBtn">+ 박스</button>
+      </div>
+      <div class="layer-list" id="layerList"></div>
+    </div>
+
+    <!-- 6. Selected element properties -->
+    <div class="section" id="propsSection">
+      <div class="section-header"><span class="num">6</span> 선택 요소 속성</div>
+      <div id="emptyProps" class="empty-hint">미리보기에서 텍스트나 박스를 클릭하세요</div>
+
+      <div id="textProps" style="display:none;">
+        <div class="field">
+          <label>텍스트 내용</label>
+          <textarea id="propText" rows="2"></textarea>
+        </div>
+
+        <div class="field">
+          <label>글꼴</label>
+          <select id="propFontFamily">
+            <option value="Pretendard">Pretendard (모던 기본)</option>
+            <option value="Noto Sans KR">본고딕 (Noto Sans KR)</option>
+            <option value="Noto Serif KR">본명조 (Noto Serif KR)</option>
+            <option value="Black Han Sans">검은고딕 (강한 임팩트)</option>
+            <option value="Jua">주아체 (친근/이벤트)</option>
+            <option value="Do Hyeon">도현체 (굵직)</option>
+            <option value="Nanum Gothic">나눔고딕</option>
+            <option value="Gowun Dodum">고운돋움 (부드러움)</option>
+            <option value="Gugi">구기체 (개성)</option>
+            <option value="Gaegu">개구체 (손글씨)</option>
+            <option value="Single Day">싱글데이 (캘리)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>글자 크기 <span id="fontSizeVal" style="color:var(--accent);float:right;font-weight:700;"></span></label>
+          <input type="range" id="propFontSize" min="12" max="240" step="1">
+        </div>
+
+        <div class="field row-2">
+          <div>
+            <label>X 위치</label>
+            <input type="number" id="propX" step="1">
+          </div>
+          <div>
+            <label>Y 위치</label>
+            <input type="number" id="propY" step="1">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>색상</label>
+          <input type="color" id="propColor" value="#ffffff">
+          <div class="color-presets" id="textColorPresets">
+            <button class="color-swatch white"  data-color="#ffffff" title="흰색"></button>
+            <button class="color-swatch black"  data-color="#000000" title="검정"></button>
+            <button class="color-swatch gray"   data-color="#9ca3af" title="회색"></button>
+            <button class="color-swatch yellow" data-color="#FCD34D" title="브랜드 노랑"></button>
+            <button class="color-swatch orange" data-color="#f97316" title="주황"></button>
+            <button class="color-swatch red"    data-color="#ef4444" title="빨강"></button>
+            <button class="color-swatch blue"   data-color="#3b82f6" title="파랑"></button>
+            <button class="color-swatch navy"   data-color="#1e3a8a" title="네이비"></button>
+            <button class="color-swatch green"  data-color="#10b981" title="초록"></button>
+            <button class="color-swatch pink"   data-color="#ec4899" title="핑크"></button>
+            <button class="color-swatch purple" data-color="#8b5cf6" title="보라"></button>
+            <button class="color-swatch brown"  data-color="#78350f" title="브라운"></button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>굵기</label>
+          <div class="btn-group" id="weightGroup">
+            <button data-v="300">얇게</button>
+            <button data-v="500">보통</button>
+            <button data-v="700">굵게</button>
+            <button data-v="900" class="active">진하게</button>
+          </div>
+          <div class="help">⚠ 일부 글꼴(검은고딕, 주아체 등)은 굵기 1종만 지원합니다.</div>
+        </div>
+
+        <div class="field">
+          <label>정렬</label>
+          <div class="btn-group" id="alignGroup">
+            <button data-v="left">좌</button>
+            <button data-v="center" class="active">중앙</button>
+            <button data-v="right">우</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label><input type="checkbox" id="propShadow" style="accent-color:var(--accent);margin-right:6px;">그림자</label>
+        </div>
+
+        <button class="btn-danger" id="deleteSelected">선택 요소 삭제</button>
+      </div>
+
+      <div id="boxProps" style="display:none;">
+        <div class="field row-2">
+          <div>
+            <label>X (중심)</label>
+            <input type="number" id="boxX" step="1">
+          </div>
+          <div>
+            <label>Y (중심)</label>
+            <input type="number" id="boxY" step="1">
+          </div>
+        </div>
+        <div class="field row-2">
+          <div>
+            <label>너비</label>
+            <input type="number" id="boxW" step="1" min="10">
+          </div>
+          <div>
+            <label>높이</label>
+            <input type="number" id="boxH" step="1" min="10">
+          </div>
+        </div>
+        <div class="field">
+          <label>배경 색</label>
+          <input type="color" id="boxColor" value="#FCD34D">
+          <div class="color-presets" id="boxColorPresets">
+            <button class="color-swatch white"  data-color="#ffffff" title="흰색"></button>
+            <button class="color-swatch black"  data-color="#000000" title="검정"></button>
+            <button class="color-swatch gray"   data-color="#9ca3af" title="회색"></button>
+            <button class="color-swatch yellow" data-color="#FCD34D" title="브랜드 노랑"></button>
+            <button class="color-swatch orange" data-color="#f97316" title="주황"></button>
+            <button class="color-swatch red"    data-color="#ef4444" title="빨강"></button>
+            <button class="color-swatch blue"   data-color="#3b82f6" title="파랑"></button>
+            <button class="color-swatch navy"   data-color="#1e3a8a" title="네이비"></button>
+            <button class="color-swatch green"  data-color="#10b981" title="초록"></button>
+            <button class="color-swatch pink"   data-color="#ec4899" title="핑크"></button>
+            <button class="color-swatch purple" data-color="#8b5cf6" title="보라"></button>
+            <button class="color-swatch brown"  data-color="#78350f" title="브라운"></button>
+          </div>
+        </div>
+        <div class="field">
+          <label>불투명도 <span id="boxAlphaVal" style="color:var(--accent);float:right;font-weight:700;"></span></label>
+          <input type="range" id="boxAlpha" min="0" max="100" step="1" value="100">
+        </div>
+        <div class="field">
+          <label>모서리 둥글기</label>
+          <input type="number" id="boxRadius" step="1" min="0" value="0">
+        </div>
+        <button class="btn-danger" id="deleteSelectedBox">선택 박스 삭제</button>
+      </div>
+
+      <div id="productProps" style="display:none;">
+        <div class="field row-2">
+          <div>
+            <label>X (중심)</label>
+            <input type="number" id="prodX" step="1">
+          </div>
+          <div>
+            <label>Y (중심)</label>
+            <input type="number" id="prodY" step="1">
+          </div>
+        </div>
+        <div class="field row-2">
+          <div>
+            <label>너비</label>
+            <input type="number" id="prodW" step="1" min="20">
+          </div>
+          <div>
+            <label>높이</label>
+            <input type="number" id="prodH" step="1" min="20">
+          </div>
+        </div>
+        <div class="help">코너의 파란 점을 드래그해서 크기 조절도 가능합니다.</div>
+      </div>
+    </div>
+
+    <!-- 7. Download -->
+    <div class="section">
+      <button class="btn-primary" id="downloadBtn">PNG 이미지 다운로드</button>
+    </div>
+  </div>
+
+  <!-- ============== RIGHT: PREVIEW ============== -->
+  <div class="preview-area">
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="bg-layer" id="bgLayer"></div>
+        <div class="empty-bg" id="emptyBg">배경 이미지를 업로드해주세요</div>
+        <!-- elements injected here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<canvas id="exportCanvas"></canvas>
+
+<script>
+  // =========================================================================
+  // STATE
+  // =========================================================================
+  const state = {
+    canvasW: 1080,
+    canvasH: 1080,
+    bgImageEl: null,        // HTMLImageElement
+    bgImageSrc: null,
+    productImageEl: null,
+    productImageSrc: null,
+    elements: [],           // [{id, type, ...}]
+    selectedId: null,
+    nextId: 1,
+    activeTemplate: null,
+  };
+
+  function uid() { return 'el_' + (state.nextId++); }
+
+  // =========================================================================
+  // 10 TEMPLATES (positions in canvas coordinates, normalized to 1080x1080)
+  // For other canvas sizes, positions are scaled proportionally.
+  // =========================================================================
+  // Each template returns elements based on canvas W,H
+  const TEMPLATES = [
+    {
+      key: 'split-left',
+      name: '좌우 분할 (텍스트 좌측)',
+      build: (W, H) => ([
+        { type: 'box', x: 0 + W*0.27, y: H/2, w: W*0.54, h: H, color: '#000000', alpha: 35, radius: 0 },
+        { type: 'text', text: '제품명을\n입력하세요', x: W*0.05, y: H*0.40, fontSize: H*0.085, weight: 900, color: '#ffffff', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '서브 카피를 한 줄로', x: W*0.05, y: H*0.52, fontSize: H*0.030, weight: 500, color: '#e5e5e5', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '대리점명 · 산업안전솔루션', x: W*0.05, y: H*0.92, fontSize: H*0.022, weight: 700, color: '#FCD34D', align: 'left', anchor: 'left', shadow: false },
+        { type: 'product', x: W*0.74, y: H*0.50, w: W*0.45, h: H*0.55 },
+      ])
+    },
+    {
+      key: 'split-right',
+      name: '좌우 분할 (텍스트 우측)',
+      build: (W, H) => ([
+        { type: 'product', x: W*0.26, y: H*0.50, w: W*0.45, h: H*0.55 },
+        { type: 'text', text: '제품명을\n입력하세요', x: W*0.95, y: H*0.40, fontSize: H*0.085, weight: 900, color: '#ffffff', align: 'right', anchor: 'right', shadow: false },
+        { type: 'text', text: '서브 카피를 한 줄로', x: W*0.95, y: H*0.52, fontSize: H*0.030, weight: 500, color: '#e5e5e5', align: 'right', anchor: 'right', shadow: false },
+        { type: 'text', text: '대리점명 · 산업안전솔루션', x: W*0.95, y: H*0.92, fontSize: H*0.022, weight: 700, color: '#FCD34D', align: 'right', anchor: 'right', shadow: false },
+      ])
+    },
+    {
+      key: 'center-hero',
+      name: '센터 강조',
+      build: (W, H) => ([
+        { type: 'text', text: '제품명을 입력하세요', x: W/2, y: H*0.13, fontSize: H*0.060, weight: 900, color: '#ffffff', align: 'center', anchor: 'center', shadow: true },
+        { type: 'product', x: W/2, y: H*0.55, w: W*0.55, h: H*0.55 },
+        { type: 'text', text: '서브 카피 또는 핵심 가치 한 줄', x: W/2, y: H*0.90, fontSize: H*0.028, weight: 500, color: '#e5e5e5', align: 'center', anchor: 'center', shadow: false },
+      ])
+    },
+    {
+      key: 'top-band',
+      name: '상단 띠 제목',
+      build: (W, H) => ([
+        { type: 'box', x: W/2, y: H*0.075, w: W, h: H*0.15, color: '#FCD34D', alpha: 100, radius: 0 },
+        { type: 'text', text: '제품명을 입력하세요', x: W/2, y: H*0.075, fontSize: H*0.055, weight: 900, color: '#1a1100', align: 'center', anchor: 'center', shadow: false },
+        { type: 'product', x: W/2, y: H*0.58, w: W*0.55, h: H*0.55 },
+        { type: 'text', text: '대리점명 · 산업안전솔루션 파트너', x: W/2, y: H*0.94, fontSize: H*0.024, weight: 600, color: '#888888', align: 'center', anchor: 'center', shadow: false },
+      ])
+    },
+    {
+      key: 'bottom-band',
+      name: '하단 띠 정보',
+      build: (W, H) => ([
+        { type: 'product', x: W/2, y: H*0.40, w: W*0.55, h: H*0.55 },
+        { type: 'box', x: W/2, y: H*0.83, w: W, h: H*0.30, color: '#000000', alpha: 80, radius: 0 },
+        { type: 'text', text: '제품명을 입력하세요', x: W/2, y: H*0.78, fontSize: H*0.045, weight: 900, color: '#ffffff', align: 'center', anchor: 'center', shadow: false },
+        { type: 'text', text: '핵심 특징 · 인증 · 사이즈 정보', x: W/2, y: H*0.86, fontSize: H*0.024, weight: 500, color: '#cccccc', align: 'center', anchor: 'center', shadow: false },
+        { type: 'text', text: '대리점명', x: W/2, y: H*0.93, fontSize: H*0.022, weight: 700, color: '#FCD34D', align: 'center', anchor: 'center', shadow: false },
+      ])
+    },
+    {
+      key: 'big-type',
+      name: '빅 타이포',
+      build: (W, H) => ([
+        { type: 'text', text: 'NEW', x: W*0.05, y: H*0.20, fontSize: H*0.16, weight: 900, color: '#FCD34D', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '제품명을\n입력하세요', x: W*0.05, y: H*0.55, fontSize: H*0.090, weight: 900, color: '#ffffff', align: 'left', anchor: 'left', shadow: false },
+        { type: 'product', x: W*0.78, y: H*0.78, w: W*0.40, h: H*0.40 },
+      ])
+    },
+    {
+      key: 'price-hero',
+      name: '가격 강조',
+      build: (W, H) => ([
+        { type: 'product', x: W*0.28, y: H*0.50, w: W*0.45, h: H*0.55 },
+        { type: 'text', text: '특별가', x: W*0.97, y: H*0.32, fontSize: H*0.030, weight: 700, color: '#FCD34D', align: 'right', anchor: 'right', shadow: false },
+        { type: 'text', text: '12,900원', x: W*0.97, y: H*0.45, fontSize: H*0.110, weight: 900, color: '#ffffff', align: 'right', anchor: 'right', shadow: false },
+        { type: 'text', text: '제품명을 여기에', x: W*0.97, y: H*0.58, fontSize: H*0.030, weight: 500, color: '#cccccc', align: 'right', anchor: 'right', shadow: false },
+        { type: 'box', x: W*0.97 - W*0.10, y: H*0.72, w: W*0.20, h: H*0.05, color: '#FCD34D', alpha: 100, radius: 4 },
+        { type: 'text', text: '바로 문의', x: W*0.97 - W*0.10, y: H*0.72, fontSize: H*0.022, weight: 700, color: '#1a1100', align: 'center', anchor: 'center', shadow: false },
+      ])
+    },
+    {
+      key: 'catalog',
+      name: '카탈로그 (스펙)',
+      build: (W, H) => ([
+        { type: 'product', x: W*0.27, y: H*0.55, w: W*0.42, h: H*0.55 },
+        { type: 'text', text: '제품명', x: W*0.55, y: H*0.20, fontSize: H*0.060, weight: 900, color: '#ffffff', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '· 주요 특징 1', x: W*0.55, y: H*0.40, fontSize: H*0.028, weight: 500, color: '#e5e5e5', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '· 주요 특징 2', x: W*0.55, y: H*0.48, fontSize: H*0.028, weight: 500, color: '#e5e5e5', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '· 주요 특징 3', x: W*0.55, y: H*0.56, fontSize: H*0.028, weight: 500, color: '#e5e5e5', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '· 인증/규격 정보', x: W*0.55, y: H*0.64, fontSize: H*0.028, weight: 500, color: '#e5e5e5', align: 'left', anchor: 'left', shadow: false },
+        { type: 'text', text: '대리점명', x: W*0.55, y: H*0.88, fontSize: H*0.026, weight: 700, color: '#FCD34D', align: 'left', anchor: 'left', shadow: false },
+      ])
+    },
+    {
+      key: 'minimal',
+      name: '미니멀',
+      build: (W, H) => ([
+        { type: 'product', x: W/2, y: H*0.45, w: W*0.55, h: H*0.55 },
+        { type: 'text', text: '제품명', x: W/2, y: H*0.85, fontSize: H*0.040, weight: 700, color: '#ffffff', align: 'center', anchor: 'center', shadow: false },
+        { type: 'text', text: '대리점명', x: W/2, y: H*0.92, fontSize: H*0.020, weight: 500, color: '#888888', align: 'center', anchor: 'center', shadow: false },
+      ])
+    },
+    {
+      key: 'sale',
+      name: '세일/이벤트',
+      build: (W, H) => ([
+        { type: 'box', x: W*0.18, y: H*0.18, w: W*0.30, h: H*0.10, color: '#ef4444', alpha: 100, radius: 8 },
+        { type: 'text', text: 'SALE', x: W*0.18, y: H*0.18, fontSize: H*0.055, weight: 900, color: '#ffffff', align: 'center', anchor: 'center', shadow: false },
+        { type: 'product', x: W/2, y: H*0.55, w: W*0.55, h: H*0.55 },
+        { type: 'text', text: '최대 30% 할인', x: W/2, y: H*0.90, fontSize: H*0.040, weight: 900, color: '#FCD34D', align: 'center', anchor: 'center', shadow: false },
+      ])
+    },
+  ];
+
+  // =========================================================================
+  // ELEMENT FACTORY
+  // =========================================================================
+  function makeElement(spec) {
+    const base = { id: uid() };
+    if (spec.type === 'text') {
+      return Object.assign(base, {
+        type: 'text',
+        text: spec.text || '텍스트',
+        x: spec.x, y: spec.y,
+        fontSize: spec.fontSize || 60,
+        fontFamily: spec.fontFamily || 'Pretendard',
+        weight: spec.weight || 800,
+        color: spec.color || '#ffffff',
+        align: spec.align || 'center',  // text-align (only matters for multi-line)
+        anchor: spec.anchor || 'center', // how (x,y) maps to box: left/center/right
+        shadow: !!spec.shadow,
+      });
+    }
+    if (spec.type === 'box') {
+      return Object.assign(base, {
+        type: 'box',
+        x: spec.x, y: spec.y, w: spec.w, h: spec.h,
+        color: spec.color || '#FCD34D',
+        alpha: spec.alpha == null ? 100 : spec.alpha,
+        radius: spec.radius || 0,
+      });
+    }
+    if (spec.type === 'product') {
+      return Object.assign(base, {
+        type: 'product',
+        x: spec.x, y: spec.y,
+        w: spec.w, h: spec.h,
+      });
+    }
+  }
+
+  function applyTemplate(tpl) {
+    state.activeTemplate = tpl.key;
+    const W = state.canvasW, H = state.canvasH;
+    state.elements = tpl.build(W, H).map(makeElement);
+    // Remove product element if no product image
+    if (!state.productImageSrc) {
+      state.elements = state.elements.filter(e => e.type !== 'product');
+    }
+    state.selectedId = null;
+    renderAll();
+  }
+
+  // =========================================================================
+  // DOM REFS
+  // =========================================================================
+  const stage = document.getElementById('stage');
+  const bgLayer = document.getElementById('bgLayer');
+  const emptyBg = document.getElementById('emptyBg');
+  const layerList = document.getElementById('layerList');
+  const templatesGrid = document.getElementById('templatesGrid');
+  const exportCanvas = document.getElementById('exportCanvas');
+  const ctx = exportCanvas.getContext('2d');
+
+  // =========================================================================
+  // CANVAS SIZE
+  // =========================================================================
+  document.getElementById('canvasSize').addEventListener('change', (e) => {
+    const [w, h] = e.target.value.split('x').map(Number);
+    state.canvasW = w;
+    state.canvasH = h;
+    // Re-apply template if any
+    if (state.activeTemplate) {
+      const tpl = TEMPLATES.find(t => t.key === state.activeTemplate);
+      if (tpl) applyTemplate(tpl);
+    } else {
+      renderAll();
+    }
+  });
+
+  // =========================================================================
+  // UPLOAD HANDLERS
+  // =========================================================================
+  function setupUpload(zoneId, inputId, textId, previewId, filenameId, onLoad) {
+    const zone = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    const text = document.getElementById(textId);
+    const preview = document.getElementById(previewId);
+    const filename = document.getElementById(filenameId);
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = 'var(--accent)'; });
+    zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.style.borderColor = '';
+      if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]);
+    });
+    input.addEventListener('change', (e) => {
+      if (e.target.files[0]) handle(e.target.files[0]);
+    });
+    function handle(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          preview.src = e.target.result;
+          preview.style.display = 'block';
+          text.style.display = 'none';
+          filename.textContent = file.name;
+          zone.classList.add('has-file');
+          onLoad(img, e.target.result);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  setupUpload('bgZone', 'bgInput', 'bgText', 'bgPreview', 'bgFilename', (img, src) => {
+    state.bgImageEl = img;
+    state.bgImageSrc = src;
+    bgLayer.style.backgroundImage = `url(${src})`;
+    emptyBg.style.display = 'none';
+    renderAll();
+  });
+
+  setupUpload('prodZone', 'prodInput', 'prodText', 'prodPreview', 'prodFilename', (img, src) => {
+    state.productImageEl = img;
+    state.productImageSrc = src;
+    // If no product element exists yet, add one to current template (or as standalone)
+    const hasProduct = state.elements.some(el => el.type === 'product');
+    if (!hasProduct) {
+      // Add a centered product element
+      state.elements.push(makeElement({
+        type: 'product',
+        x: state.canvasW/2,
+        y: state.canvasH/2,
+        w: state.canvasW * 0.5,
+        h: state.canvasH * 0.5,
+      }));
+    }
+    renderAll();
+  });
+
+  // =========================================================================
+  // TEMPLATE GRID
+  // =========================================================================
+  function renderTemplateGrid() {
+    templatesGrid.innerHTML = '';
+    TEMPLATES.forEach((tpl, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'template-btn' + (state.activeTemplate === tpl.key ? ' active' : '');
+      btn.dataset.key = tpl.key;
+      btn.innerHTML = `
+        ${renderTemplateThumb(tpl, idx)}
+        <div class="template-name">${idx+1}. ${tpl.name}</div>
+      `;
+      btn.addEventListener('click', () => {
+        applyTemplate(tpl);
+        renderTemplateGrid();
+      });
+      templatesGrid.appendChild(btn);
+    });
+  }
+
+  function renderTemplateThumb(tpl, idx) {
+    // tiny SVG preview — symbolic
+    const previewW = 120, previewH = 100;
+    const els = tpl.build(previewW, previewH);
+    let svg = `<svg viewBox="0 0 ${previewW} ${previewH}" class="template-thumb" preserveAspectRatio="none">`;
+    svg += `<rect width="${previewW}" height="${previewH}" fill="#1a1a1a"/>`;
+    for (const el of els) {
+      if (el.type === 'box') {
+        svg += `<rect x="${el.x - el.w/2}" y="${el.y - el.h/2}" width="${el.w}" height="${el.h}" fill="${el.color}" opacity="${(el.alpha||100)/100}" rx="${el.radius||0}"/>`;
+      } else if (el.type === 'product') {
+        svg += `<rect x="${el.x - el.w/2}" y="${el.y - el.h/2}" width="${el.w}" height="${el.h}" fill="#3a3a3a" stroke="#666" stroke-dasharray="2,2"/>`;
+        svg += `<text x="${el.x}" y="${el.y+2}" fill="#666" font-size="6" text-anchor="middle">제품</text>`;
+      } else if (el.type === 'text') {
+        const fs = Math.max(4, el.fontSize * 0.45);
+        let tx = el.x;
+        let ta = 'middle';
+        if (el.anchor === 'left') { ta = 'start'; }
+        else if (el.anchor === 'right') { ta = 'end'; }
+        const lines = String(el.text).split('\n');
+        lines.forEach((line, i) => {
+          svg += `<text x="${tx}" y="${el.y + i*fs*1.1 - (lines.length-1)*fs*0.55}" fill="${el.color}" font-size="${fs}" font-weight="${el.weight}" text-anchor="${ta}" dominant-baseline="middle">${escapeHtml(line)}</text>`;
+        });
+      }
+    }
+    svg += `</svg>`;
+    return svg;
+  }
+
+  // =========================================================================
+  // ADD ELEMENTS
+  // =========================================================================
+  document.getElementById('addTextBtn').addEventListener('click', () => {
+    const el = makeElement({
+      type: 'text',
+      text: '새 텍스트',
+      x: state.canvasW/2,
+      y: state.canvasH/2,
+      fontSize: state.canvasH * 0.04,
+      weight: 700,
+      color: '#ffffff',
+      align: 'center',
+      anchor: 'center',
+    });
+    state.elements.push(el);
+    state.selectedId = el.id;
+    renderAll();
+  });
+
+  document.getElementById('addBoxBtn').addEventListener('click', () => {
+    const el = makeElement({
+      type: 'box',
+      x: state.canvasW/2,
+      y: state.canvasH/2,
+      w: state.canvasW * 0.4,
+      h: state.canvasH * 0.1,
+      color: '#FCD34D',
+      alpha: 100,
+      radius: 4,
+    });
+    state.elements.push(el);
+    state.selectedId = el.id;
+    renderAll();
+  });
+
+  // =========================================================================
+  // RENDERING (DOM-based preview)
+  // =========================================================================
+  function renderAll() {
+    // Compute display scale: fit stage into preview area
+    const previewArea = document.querySelector('.preview-area');
+    const padding = 60;
+    const availW = previewArea.clientWidth - padding;
+    const availH = previewArea.clientHeight - padding;
+    const sx = availW / state.canvasW;
+    const sy = availH / state.canvasH;
+    const scale = Math.min(sx, sy, 1);
+
+    stage.style.width = state.canvasW + 'px';
+    stage.style.height = state.canvasH + 'px';
+    stage.style.transform = `scale(${scale})`;
+    document.querySelector('.stage-wrap').style.width = (state.canvasW * scale) + 'px';
+    document.querySelector('.stage-wrap').style.height = (state.canvasH * scale) + 'px';
+
+    // Clear element nodes
+    [...stage.querySelectorAll('.el')].forEach(n => n.remove());
+
+    // Render each element
+    for (const el of state.elements) {
+      const node = renderElementNode(el);
+      stage.appendChild(node);
+    }
+
+    renderLayerList();
+    renderProperties();
+  }
+
+  function renderElementNode(el) {
+    const node = document.createElement('div');
+    node.className = 'el el-' + el.type;
+    node.dataset.id = el.id;
+    if (state.selectedId === el.id) node.classList.add('selected');
+
+    if (el.type === 'text') {
+      // anchor handling: position is at the anchor point of the text
+      // we set transform-origin / translate accordingly
+      node.style.left = el.x + 'px';
+      node.style.top = el.y + 'px';
+      node.style.fontSize = el.fontSize + 'px';
+      node.style.fontWeight = el.weight;
+      node.style.color = el.color;
+      node.style.textAlign = el.align;
+      const ff = el.fontFamily || 'Pretendard';
+      node.style.fontFamily = `'${ff}', 'Pretendard', 'Apple SD Gothic Neo', sans-serif`;
+      node.style.letterSpacing = '-0.02em';
+      if (el.shadow) node.style.textShadow = '0 4px 20px rgba(0,0,0,0.6)';
+      // anchor: left/center/right -> translate
+      let tx = '-50%', ty = '-50%';
+      if (el.anchor === 'left') tx = '0';
+      else if (el.anchor === 'right') tx = '-100%';
+      node.style.transform = `translate(${tx}, ${ty})`;
+      node.textContent = el.text;
+    } else if (el.type === 'box') {
+      node.style.left = (el.x - el.w/2) + 'px';
+      node.style.top = (el.y - el.h/2) + 'px';
+      node.style.width = el.w + 'px';
+      node.style.height = el.h + 'px';
+      node.style.transform = 'none';
+      node.style.background = el.color;
+      node.style.opacity = (el.alpha || 100) / 100;
+      node.style.borderRadius = (el.radius || 0) + 'px';
+      // resize handles
+      ['tl','tr','bl','br'].forEach(c => {
+        const h = document.createElement('div');
+        h.className = 'resize-handle ' + c;
+        h.dataset.corner = c;
+        node.appendChild(h);
+      });
+    } else if (el.type === 'product') {
+      node.style.left = (el.x - el.w/2) + 'px';
+      node.style.top = (el.y - el.h/2) + 'px';
+      node.style.width = el.w + 'px';
+      node.style.height = el.h + 'px';
+      node.style.transform = 'none';
+      if (state.productImageSrc) {
+        node.style.backgroundImage = `url(${state.productImageSrc})`;
+      } else {
+        node.style.background = 'repeating-linear-gradient(45deg, #2a2a2a 0 12px, #222 12px 24px)';
+        node.style.color = '#666';
+        node.style.display = 'flex';
+        node.style.alignItems = 'center';
+        node.style.justifyContent = 'center';
+        node.style.fontSize = '16px';
+        node.textContent = '제품 이미지 자리';
+      }
+      ['tl','tr','bl','br'].forEach(c => {
+        const h = document.createElement('div');
+        h.className = 'resize-handle ' + c;
+        h.dataset.corner = c;
+        node.appendChild(h);
+      });
+    }
+    return node;
+  }
+
+  // =========================================================================
+  // LAYER LIST
+  // =========================================================================
+  function renderLayerList() {
+    layerList.innerHTML = '';
+    if (state.elements.length === 0) {
+      layerList.innerHTML = '<div class="empty-hint">템플릿 선택 또는 텍스트를 추가하세요</div>';
+      return;
+    }
+    state.elements.slice().reverse().forEach(el => {
+      const row = document.createElement('div');
+      row.className = 'layer-row' + (state.selectedId === el.id ? ' active' : '');
+      const icon = el.type === 'text' ? 'T' : el.type === 'box' ? '■' : '◧';
+      const label = el.type === 'text' ? (el.text.split('\n')[0] || '(빈 텍스트)') : (el.type === 'box' ? `박스 ${el.w|0}×${el.h|0}` : '제품 이미지');
+      row.innerHTML = `
+        <span class="layer-icon">${icon}</span>
+        <span class="layer-text">${escapeHtml(label)}</span>
+        <button class="layer-del" type="button" title="삭제">×</button>
+      `;
+      row.addEventListener('click', (e) => {
+        if (e.target.classList.contains('layer-del')) return;
+        state.selectedId = el.id;
+        renderAll();
+      });
+      row.querySelector('.layer-del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.elements = state.elements.filter(x => x.id !== el.id);
+        if (state.selectedId === el.id) state.selectedId = null;
+        renderAll();
+      });
+      layerList.appendChild(row);
+    });
+  }
+
+  // =========================================================================
+  // PROPERTIES PANEL
+  // =========================================================================
+  function getSelected() {
+    return state.elements.find(e => e.id === state.selectedId);
+  }
+
+  function renderProperties() {
+    const el = getSelected();
+    const empty = document.getElementById('emptyProps');
+    const text = document.getElementById('textProps');
+    const box = document.getElementById('boxProps');
+    const product = document.getElementById('productProps');
+
+    if (!el) {
+      empty.style.display = 'block';
+      text.style.display = 'none';
+      box.style.display = 'none';
+      product.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    if (el.type === 'text') {
+      text.style.display = 'block';
+      box.style.display = 'none';
+      product.style.display = 'none';
+      document.getElementById('propText').value = el.text;
+      document.getElementById('propFontFamily').value = el.fontFamily || 'Pretendard';
+      document.getElementById('propFontSize').value = el.fontSize;
+      document.getElementById('fontSizeVal').textContent = (el.fontSize|0) + 'px';
+      document.getElementById('propX').value = el.x|0;
+      document.getElementById('propY').value = el.y|0;
+      document.getElementById('propColor').value = el.color;
+      document.getElementById('propShadow').checked = !!el.shadow;
+      document.querySelectorAll('#weightGroup button').forEach(b => {
+        b.classList.toggle('active', String(el.weight) === b.dataset.v);
+      });
+      document.querySelectorAll('#alignGroup button').forEach(b => {
+        b.classList.toggle('active', el.anchor === b.dataset.v);
+      });
+    } else if (el.type === 'box') {
+      text.style.display = 'none';
+      box.style.display = 'block';
+      product.style.display = 'none';
+      document.getElementById('boxX').value = el.x|0;
+      document.getElementById('boxY').value = el.y|0;
+      document.getElementById('boxW').value = el.w|0;
+      document.getElementById('boxH').value = el.h|0;
+      document.getElementById('boxColor').value = el.color;
+      document.getElementById('boxAlpha').value = el.alpha;
+      document.getElementById('boxAlphaVal').textContent = (el.alpha|0) + '%';
+      document.getElementById('boxRadius').value = el.radius || 0;
+    } else if (el.type === 'product') {
+      text.style.display = 'none';
+      box.style.display = 'none';
+      product.style.display = 'block';
+      document.getElementById('prodX').value = el.x|0;
+      document.getElementById('prodY').value = el.y|0;
+      document.getElementById('prodW').value = el.w|0;
+      document.getElementById('prodH').value = el.h|0;
+    }
+  }
+
+  // text props bindings
+  document.getElementById('propText').addEventListener('input', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.text = e.target.value;
+    renderAll();
+  });
+  document.getElementById('propFontFamily').addEventListener('change', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.fontFamily = e.target.value;
+    renderAll();
+  });
+  document.getElementById('propFontSize').addEventListener('input', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.fontSize = parseFloat(e.target.value);
+    document.getElementById('fontSizeVal').textContent = (el.fontSize|0) + 'px';
+    renderAll();
+  });
+  document.getElementById('propX').addEventListener('input', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.x = parseFloat(e.target.value) || 0;
+    renderAll();
+  });
+  document.getElementById('propY').addEventListener('input', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.y = parseFloat(e.target.value) || 0;
+    renderAll();
+  });
+  document.getElementById('propColor').addEventListener('input', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.color = e.target.value;
+    renderAll();
+  });
+  // Color presets: text
+  document.querySelectorAll('#textColorPresets .color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const el = getSelected(); if (!el || el.type !== 'text') return;
+      el.color = sw.dataset.color;
+      document.getElementById('propColor').value = sw.dataset.color;
+      renderAll();
+    });
+  });
+  document.getElementById('propShadow').addEventListener('change', (e) => {
+    const el = getSelected(); if (!el) return;
+    el.shadow = e.target.checked;
+    renderAll();
+  });
+  document.querySelectorAll('#weightGroup button').forEach(b => {
+    b.addEventListener('click', () => {
+      const el = getSelected(); if (!el) return;
+      el.weight = parseInt(b.dataset.v);
+      renderAll();
+    });
+  });
+  document.querySelectorAll('#alignGroup button').forEach(b => {
+    b.addEventListener('click', () => {
+      const el = getSelected(); if (!el) return;
+      el.anchor = b.dataset.v;
+      el.align = b.dataset.v;
+      renderAll();
+    });
+  });
+  document.getElementById('deleteSelected').addEventListener('click', () => {
+    const el = getSelected(); if (!el) return;
+    state.elements = state.elements.filter(x => x.id !== el.id);
+    state.selectedId = null;
+    renderAll();
+  });
+
+  // box bindings
+  ['boxX','boxY','boxW','boxH','boxAlpha','boxRadius'].forEach(id => {
+    document.getElementById(id).addEventListener('input', (e) => {
+      const el = getSelected(); if (!el || el.type !== 'box') return;
+      const key = id === 'boxX' ? 'x' : id === 'boxY' ? 'y' : id === 'boxW' ? 'w' : id === 'boxH' ? 'h' : id === 'boxAlpha' ? 'alpha' : 'radius';
+      el[key] = parseFloat(e.target.value) || 0;
+      if (id === 'boxAlpha') document.getElementById('boxAlphaVal').textContent = (el.alpha|0) + '%';
+      renderAll();
+    });
+  });
+  document.getElementById('boxColor').addEventListener('input', (e) => {
+    const el = getSelected(); if (!el || el.type !== 'box') return;
+    el.color = e.target.value;
+    renderAll();
+  });
+  // Color presets: box
+  document.querySelectorAll('#boxColorPresets .color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const el = getSelected(); if (!el || el.type !== 'box') return;
+      el.color = sw.dataset.color;
+      document.getElementById('boxColor').value = sw.dataset.color;
+      renderAll();
+    });
+  });
+  document.getElementById('deleteSelectedBox').addEventListener('click', () => {
+    const el = getSelected(); if (!el) return;
+    state.elements = state.elements.filter(x => x.id !== el.id);
+    state.selectedId = null;
+    renderAll();
+  });
+
+  // product bindings
+  ['prodX','prodY','prodW','prodH'].forEach(id => {
+    document.getElementById(id).addEventListener('input', (e) => {
+      const el = getSelected(); if (!el || el.type !== 'product') return;
+      const key = id === 'prodX' ? 'x' : id === 'prodY' ? 'y' : id === 'prodW' ? 'w' : 'h';
+      el[key] = parseFloat(e.target.value) || 0;
+      renderAll();
+    });
+  });
+
+  // =========================================================================
+  // DRAG & RESIZE (mouse + touch)
+  // =========================================================================
+  let drag = null;
+
+  function getCurrentScale() {
+    const m = stage.style.transform.match(/scale\(([\d.]+)\)/);
+    return m ? parseFloat(m[1]) : 1;
+  }
+
+  function clientToCanvas(clientX, clientY) {
+    const rect = stage.getBoundingClientRect();
+    const scale = getCurrentScale();
+    return {
+      x: (clientX - rect.left) / scale,
+      y: (clientY - rect.top) / scale,
+    };
+  }
+
+  stage.addEventListener('mousedown', (e) => {
+    const target = e.target.closest('.el');
+    if (!target) {
+      // Clicked empty area: deselect
+      state.selectedId = null;
+      renderAll();
+      return;
+    }
+    const id = target.dataset.id;
+    state.selectedId = id;
+    const el = state.elements.find(x => x.id === id);
+    if (!el) return;
+
+    // Check if a resize handle was clicked
+    if (e.target.classList.contains('resize-handle')) {
+      const corner = e.target.dataset.corner;
+      const start = clientToCanvas(e.clientX, e.clientY);
+      drag = {
+        kind: 'resize',
+        corner,
+        el,
+        startMouse: start,
+        startEl: { x: el.x, y: el.y, w: el.w, h: el.h }
+      };
+    } else {
+      const start = clientToCanvas(e.clientX, e.clientY);
+      drag = {
+        kind: 'move',
+        el,
+        startMouse: start,
+        startEl: { x: el.x, y: el.y }
+      };
+    }
+    renderAll();
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const cur = clientToCanvas(e.clientX, e.clientY);
+    const dx = cur.x - drag.startMouse.x;
+    const dy = cur.y - drag.startMouse.y;
+
+    if (drag.kind === 'move') {
+      drag.el.x = drag.startEl.x + dx;
+      drag.el.y = drag.startEl.y + dy;
+    } else if (drag.kind === 'resize') {
+      const aspect = drag.startEl.w / drag.startEl.h;
+      const sx = drag.corner.includes('l') ? -1 : 1;
+      const sy = drag.corner.includes('t') ? -1 : 1;
+      // Keep aspect ratio for product, free for box
+      let newW = Math.max(20, drag.startEl.w + sx * dx * 2);
+      let newH = Math.max(20, drag.startEl.h + sy * dy * 2);
+      if (drag.el.type === 'product') {
+        // Preserve aspect: pick the larger change
+        const wRatio = newW / drag.startEl.w;
+        const hRatio = newH / drag.startEl.h;
+        const r = Math.abs(wRatio - 1) > Math.abs(hRatio - 1) ? wRatio : hRatio;
+        newW = drag.startEl.w * r;
+        newH = drag.startEl.h * r;
+      }
+      drag.el.w = newW;
+      drag.el.h = newH;
+    }
+    renderAll();
+  });
+
+  window.addEventListener('mouseup', () => { drag = null; });
+
+  // Keyboard nudge
+  window.addEventListener('keydown', (e) => {
+    const el = getSelected();
+    if (!el) return;
+    if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === 'ArrowLeft') { el.x -= step; renderAll(); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { el.x += step; renderAll(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { el.y -= step; renderAll(); e.preventDefault(); }
+    else if (e.key === 'ArrowDown') { el.y += step; renderAll(); e.preventDefault(); }
+    else if (e.key === 'Delete' || e.key === 'Backspace') {
+      state.elements = state.elements.filter(x => x.id !== el.id);
+      state.selectedId = null;
+      renderAll();
+      e.preventDefault();
+    }
+  });
+
+  // =========================================================================
+  // DOWNLOAD - render to canvas at full resolution
+  // =========================================================================
+  document.getElementById('downloadBtn').addEventListener('click', async () => {
+    if (document.fonts && document.fonts.ready) {
+      try { await document.fonts.ready; } catch(e) {}
+    }
+    const W = state.canvasW, H = state.canvasH;
+    exportCanvas.width = W;
+    exportCanvas.height = H;
+    // Clear
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    // Background image
+    if (state.bgImageEl) {
+      drawCover(state.bgImageEl, 0, 0, W, H);
+    }
+
+    // Elements in order
+    for (const el of state.elements) {
+      if (el.type === 'box') {
+        ctx.save();
+        ctx.globalAlpha = (el.alpha || 100) / 100;
+        ctx.fillStyle = el.color;
+        const x = el.x - el.w/2, y = el.y - el.h/2;
+        if (el.radius && ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, el.w, el.h, el.radius);
+          ctx.fill();
+        } else if (el.radius) {
+          // Fallback rounded rect
+          roundRect(ctx, x, y, el.w, el.h, el.radius);
+          ctx.fill();
+        } else {
+          ctx.fillRect(x, y, el.w, el.h);
+        }
+        ctx.restore();
+      } else if (el.type === 'product') {
+        if (state.productImageEl) {
+          drawContain(state.productImageEl, el.x - el.w/2, el.y - el.h/2, el.w, el.h);
+        }
+      } else if (el.type === 'text') {
+        ctx.save();
+        const ff = el.fontFamily || 'Pretendard';
+        ctx.font = `${el.weight} ${el.fontSize}px "${ff}", Pretendard, "Apple SD Gothic Neo", sans-serif`;
+        ctx.fillStyle = el.color;
+        ctx.textBaseline = 'middle';
+        // anchor maps to textAlign
+        if (el.anchor === 'left') ctx.textAlign = 'left';
+        else if (el.anchor === 'right') ctx.textAlign = 'right';
+        else ctx.textAlign = 'center';
+        if (el.shadow) {
+          ctx.shadowColor = 'rgba(0,0,0,0.6)';
+          ctx.shadowBlur = 20;
+          ctx.shadowOffsetY = 4;
+        }
+        const lines = String(el.text).split('\n');
+        const lineH = el.fontSize * 1.15;
+        const totalH = lineH * lines.length;
+        // Center the block of lines vertically around el.y (matching CSS line-height behavior approximately)
+        const startY = el.y - totalH/2 + lineH/2;
+        lines.forEach((line, i) => {
+          ctx.fillText(line, el.x, startY + i * lineH);
+        });
+        ctx.restore();
+      }
+    }
+
+    const link = document.createElement('a');
+    const ts = new Date();
+    const stamp = `${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}_${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}${String(ts.getSeconds()).padStart(2,'0')}`;
+    link.download = `thumbnail_${stamp}.png`;
+    link.href = exportCanvas.toDataURL('image/png');
+    link.click();
+  });
+
+  function drawCover(img, x, y, w, h) {
+    const ir = img.width / img.height;
+    const tr = w / h;
+    let sx, sy, sw, sh;
+    if (ir > tr) {
+      sh = img.height;
+      sw = img.height * tr;
+      sx = (img.width - sw) / 2;
+      sy = 0;
+    } else {
+      sw = img.width;
+      sh = img.width / tr;
+      sx = 0;
+      sy = (img.height - sh) / 2;
+    }
+    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+  }
+
+  function drawContain(img, x, y, w, h) {
+    const ir = img.width / img.height;
+    const tr = w / h;
+    let dw, dh;
+    if (ir > tr) {
+      dw = w;
+      dh = w / ir;
+    } else {
+      dh = h;
+      dw = h * ir;
+    }
+    const dx = x + (w - dw) / 2;
+    const dy = y + (h - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y);
+    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    ctx.lineTo(x+r, y+h);
+    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
+    ctx.closePath();
+  }
+
+  // =========================================================================
+  // UTILS
+  // =========================================================================
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // =========================================================================
+  // INIT
+  // =========================================================================
+  renderTemplateGrid();
+  renderAll();
+
+  // Recompute scale on window resize
+  window.addEventListener('resize', () => renderAll());
+
+  // Preload fonts (각 글꼴에서 사용되는 굵기를 미리 로드)
+  if (document.fonts) {
+    const families = [
+      ['Pretendard', [300, 500, 700, 900]],
+      ['Noto Sans KR', [300, 500, 700, 900]],
+      ['Noto Serif KR', [400, 700, 900]],
+      ['Black Han Sans', [400]],
+      ['Jua', [400]],
+      ['Do Hyeon', [400]],
+      ['Nanum Gothic', [400, 700, 800]],
+      ['Gowun Dodum', [400]],
+      ['Gugi', [400]],
+      ['Gaegu', [300, 400, 700]],
+      ['Single Day', [400]],
+    ];
+    families.forEach(([family, weights]) => {
+      weights.forEach(w => {
+        try { document.fonts.load(`${w} 60px "${family}"`); } catch(e) {}
+      });
+    });
+  }
+</script>
+
+</body>
+</html>
