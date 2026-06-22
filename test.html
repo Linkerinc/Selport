@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selport 연결 테스트</title>
+<style>
+  body { font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; background:#0f1115; color:#e6e8eb; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; padding:20px; box-sizing:border-box; }
+  .card { background:#1a1d23; border:1px solid #2a2e37; border-radius:14px; padding:28px; width:100%; max-width:380px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  p.sub { color:#9aa0aa; font-size:13px; margin:0 0 20px; line-height:1.5; }
+  label { display:block; font-size:13px; color:#c2c7d0; margin:12px 0 6px; }
+  input { width:100%; box-sizing:border-box; padding:11px 12px; border-radius:9px; border:1px solid #2f3440; background:#11141a; color:#e6e8eb; font-size:14px; }
+  button { width:100%; margin-top:18px; padding:12px; border:0; border-radius:9px; background:#3b6ef5; color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button.secondary { background:#2a2e37; margin-top:10px; }
+  button:disabled { opacity:.6; cursor:default; }
+  .msg { margin-top:14px; font-size:13px; padding:10px 12px; border-radius:8px; display:none; }
+  .msg.err { background:#3a1d22; color:#ff9b9b; display:block; }
+  .row { display:flex; justify-content:space-between; padding:11px 0; border-bottom:1px solid #2a2e37; font-size:14px; }
+  .row .k { color:#9aa0aa; }
+  .row .v { font-weight:600; }
+  .big { font-size:30px; font-weight:700; color:#6ee7a8; text-align:center; margin:18px 0 4px; }
+  #app { display:none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="login">
+    <h1>Selport 연결 테스트</h1>
+    <p class="sub">로그인과 데이터 연결이 잘 되는지 확인하는 임시 페이지입니다.</p>
+    <label>이메일</label>
+    <input id="email" type="email" autocomplete="username" value="krcha@linkerinc.co.kr">
+    <label>비밀번호</label>
+    <input id="password" type="password" autocomplete="current-password" placeholder="비밀번호">
+    <button id="loginBtn">로그인</button>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <div id="app">
+    <h1>연결 성공 🎉</h1>
+    <p class="sub" id="who"></p>
+    <div class="row"><span class="k">내 등급</span><span class="v" id="role">-</span></div>
+    <div class="row"><span class="k">조회 가능한 주문</span><span class="v" id="count">-</span></div>
+    <div class="big" id="bigcount"></div>
+    <button class="secondary" id="logoutBtn">로그아웃</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://ttgrbigijmnzpfutzuss.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_TMYJCTJbHqrnjeFSxKovIw_DwrX-lXg';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const $ = id => document.getElementById(id);
+function showError(t){ const m=$('msg'); m.textContent=t; m.className='msg err'; }
+
+async function showApp(session){
+  $('login').style.display='none';
+  $('app').style.display='block';
+  $('who').textContent = session.user.email + ' 로 로그인됨';
+
+  // 내 등급 (members 표에서 본인 행)
+  const { data: me } = await sb.from('members')
+    .select('role, dealer_name')
+    .eq('user_id', session.user.id)
+    .maybeSingle();
+  $('role').textContent = me ? (me.role + (me.dealer_name ? ' ('+me.dealer_name+')' : '')) : '등록 안 됨';
+
+  // 조회 가능한 주문 수 (RLS 규칙이 자동 적용됨)
+  const { count, error } = await sb.from('orders').select('*', { count:'exact', head:true });
+  if (error){ $('count').textContent = '오류: ' + error.message; }
+  else {
+    const n = (count || 0).toLocaleString();
+    $('count').textContent = n + '건';
+    $('bigcount').textContent = n + '건';
+  }
+}
+
+$('loginBtn').onclick = async () => {
+  $('msg').className = 'msg';
+  const email = $('email').value.trim();
+  const password = $('password').value;
+  if(!email || !password){ showError('이메일과 비밀번호를 입력하세요.'); return; }
+  $('loginBtn').textContent = '로그인 중...'; $('loginBtn').disabled = true;
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  $('loginBtn').textContent = '로그인'; $('loginBtn').disabled = false;
+  if(error){ showError('로그인 실패: ' + error.message); return; }
+  showApp(data.session);
+};
+
+$('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// 이미 로그인된 상태면 바로 결과 화면
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if(data.session) showApp(data.session);
+})();
+</script>
+</body>
+</html>
