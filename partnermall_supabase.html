@@ -1243,7 +1243,7 @@ body {
       let attempt=0;
       while(true){
         attempt++;
-        const { data, error } = await sb.from('orders').select('*').range(i*PAGE,i*PAGE+PAGE-1);
+        const { data, error } = await sb.from('orders').select('*').order('id',{ascending:true}).range(i*PAGE,i*PAGE+PAGE-1);
         if(error){ if(attempt<4){ await new Promise(r=>setTimeout(r,600)); continue; } throw error; }
         return data||[];
       }
