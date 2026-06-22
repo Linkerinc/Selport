@@ -1238,15 +1238,25 @@ body {
     let total=0;
     try{ const c=await sb.from('orders').select('*',{count:'exact',head:true}); total=c.count||0; }catch(e){}
     const PAGE=1000, pages=Math.max(1,Math.ceil(total/PAGE));
-    let done=0; const results=new Array(pages);
+    const results=new Array(pages); let loaded=0;
+    async function fetchPage(i){
+      let attempt=0;
+      while(true){
+        attempt++;
+        const { data, error } = await sb.from('orders').select('*').range(i*PAGE,i*PAGE+PAGE-1);
+        if(error){ if(attempt<4){ await new Promise(r=>setTimeout(r,600)); continue; } throw error; }
+        results[i]=data||[]; loaded+=results[i].length;
+        prog.textContent=loaded.toLocaleString()+' / '+total.toLocaleString()+' 건';
+        return;
+      }
+    }
     try{
-      await Promise.all(Array.from({length:pages},(_,i)=>
-        sb.from('orders').select('*').range(i*PAGE,i*PAGE+PAGE-1).then(({data,error})=>{
-          if(error) throw error;
-          results[i]=data||[]; done++;
-          prog.textContent=Math.min(done*PAGE,total).toLocaleString()+' / '+total.toLocaleString()+' 건';
-        })
-      ));
+      const CONC=6;
+      for(let start=0; start<pages; start+=CONC){
+        const batch=[];
+        for(let i=start; i<Math.min(start+CONC,pages); i++) batch.push(fetchPage(i));
+        await Promise.all(batch);
+      }
     }catch(e){ prog.innerHTML='데이터 읽기 오류: '+(e.message||e)+'<br><br><button onclick="location.reload()" style="padding:8px 14px;border-radius:8px;border:0;background:#3b6ef5;color:#fff;cursor:pointer;">다시 시도</button>'; return; }
     prog.textContent='저장하는 중…';
     try{
