@@ -1236,26 +1236,26 @@ body {
     loginBox.style.display='none'; loadingBox.style.display='block';
     const prog=$('sb-progress');
     let total=0;
-    try{ const c=await sb.from('orders').select('*',{count:'exact',head:true}); total=c.count||0; }catch(e){}
-    const PAGE=1000, pages=Math.max(1,Math.ceil(total/PAGE));
-    const results=new Array(pages); let loaded=0;
-    async function fetchPage(i){
+    try{ const c=await sb.from('orders').select('id',{count:'exact',head:true}); total=c.count||0; }catch(e){}
+    const PAGE=1000, CONC=6;
+    const results=[]; let loaded=0, pageIdx=0, endReached=false;
+    async function fetchPageData(i){
       let attempt=0;
       while(true){
         attempt++;
         const { data, error } = await sb.from('orders').select('*').range(i*PAGE,i*PAGE+PAGE-1);
         if(error){ if(attempt<4){ await new Promise(r=>setTimeout(r,600)); continue; } throw error; }
-        results[i]=data||[]; loaded+=results[i].length;
-        prog.textContent=loaded.toLocaleString()+' / '+total.toLocaleString()+' 건';
-        return;
+        return data||[];
       }
     }
     try{
-      const CONC=6;
-      for(let start=0; start<pages; start+=CONC){
-        const batch=[];
-        for(let i=start; i<Math.min(start+CONC,pages); i++) batch.push(fetchPage(i));
-        await Promise.all(batch);
+      while(!endReached){
+        const idxs=[]; for(let k=0;k<CONC;k++) idxs.push(pageIdx+k);
+        const batch=await Promise.all(idxs.map(fetchPageData));
+        for(const d of batch){ results.push(d); loaded+=d.length; if(d.length<PAGE) endReached=true; }
+        prog.textContent = total ? (loaded.toLocaleString()+' / '+total.toLocaleString()+' 건') : (loaded.toLocaleString()+' 건');
+        pageIdx+=CONC;
+        if(pageIdx>20000) break;
       }
     }catch(e){ prog.innerHTML='데이터 읽기 오류: '+(e.message||e)+'<br><br><button onclick="location.reload()" style="padding:8px 14px;border-radius:8px;border:0;background:#3b6ef5;color:#fff;cursor:pointer;">다시 시도</button>'; return; }
     prog.textContent='저장하는 중…';
