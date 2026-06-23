@@ -1227,6 +1227,7 @@ body {
   const SUPABASE_URL='https://ttgrbigijmnzpfutzuss.supabase.co';
   const SUPABASE_KEY='sb_publishable_TMYJCTJbHqrnjeFSxKovIw_DwrX-lXg';
   const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  window.__sb = sb;
   const $=id=>document.getElementById(id);
   const gate=$('sb-gate'), loginBox=$('sb-login'), loadingBox=$('sb-loading');
 
@@ -1311,7 +1312,11 @@ body {
 
   async function revealTool(){
     const me=await getMyRole();
+    window.__sbRole = me.role || null;
+    window.__sbDealer = me.dealer_name || null;
     injectHeaderUI(me.role, me.dealer_name);
+    const tb=document.getElementById('tab-behavior');
+    if(tb) tb.style.display = (me.role==='admin'||me.role==='staff') ? '' : 'none';
     const meta=document.getElementById('header-meta'); const start=Date.now();
     const t=setInterval(()=>{
       const txt=meta?meta.textContent:'';
@@ -1366,6 +1371,7 @@ body {
   <div class="tab" data-page="dashboard">📊 대시보드</div>
   <div class="tab" data-page="bestseller">🏆 베스트셀러</div>
   <div class="tab" data-page="companies">👥 회원사 분석</div>
+  <div class="tab" data-page="behavior" id="tab-behavior" style="display:none">📈 고객행동분석</div>
 </nav>
 
 
@@ -1395,6 +1401,19 @@ body {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
       엑셀 업로드
     </button>
+  </div>
+
+  <!-- 분석 리포트 다운로드 -->
+  <div class="section" id="report-card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div>
+      <div class="section-title" style="margin:0;">📥 분석 리포트 다운로드</div>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-top:4px;">보유 데이터의 핵심 분석을 한 파일로 받습니다 · 요약 / 월별매출 / 대리점별 / 카테고리 / 베스트셀러 / 재구매알림</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span id="report-status" style="font-size:12px;color:var(--text-mute);"></span>
+      <button class="btn-secondary" id="report-xlsx">📊 엑셀 요약</button>
+      <button class="btn-secondary" id="report-pdf">📄 PDF 리포트</button>
+    </div>
   </div>
 
   <!-- 첫 사용시 드롭 영역 -->
@@ -1934,6 +1953,83 @@ body {
 </main>
 </div>
 
+<!-- ============== 페이지: behavior (고객행동분석 · admin/staff 전용) ============== -->
+<div class="page-panel page-behavior" id="panel-behavior" data-page="behavior">
+<main class="app-main" style="max-width:100%;padding:16px 24px;">
+  <div id="behavior-denied" style="display:none;text-align:center;padding:80px 20px;color:var(--text-mute);">
+    <div style="font-size:48px;margin-bottom:16px;opacity:.4;">🔒</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text-sub);margin-bottom:8px;">접근 권한이 없습니다</div>
+    <div style="font-size:13px;">고객행동분석은 관리자만 볼 수 있어요.</div>
+  </div>
+  <div id="behavior-content" style="display:none;">
+    <style>
+      .page-behavior .bh-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+      .page-behavior .bh-controls select{border:1px solid var(--border);border-radius:8px;padding:8px 11px;font-size:13px;font-family:inherit;color:var(--text);background:#fff;}
+      .page-behavior .bh-seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+      .page-behavior .bh-seg button{background:#fff;border:none;border-right:1px solid var(--border);color:var(--text-sub);padding:8px 13px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+      .page-behavior .bh-seg button:last-child{border-right:none;}
+      .page-behavior .bh-seg button.on{background:var(--primary);color:#fff;font-weight:600;}
+      .page-behavior .bh-looker{margin-left:auto;font-size:12.5px;color:var(--primary);text-decoration:none;border:1px solid var(--border);border-radius:8px;padding:8px 12px;}
+      .page-behavior .bh-looker:hover{border-color:var(--primary);}
+      .page-behavior .bh-note{background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:9px 13px;font-size:12px;color:var(--text-sub);margin-bottom:14px;}
+      .page-behavior .bh-note b{color:var(--text);}
+      .page-behavior .bh-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+      .page-behavior .bh-kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;border-left:3px solid var(--primary);}
+      .page-behavior .bh-kpi .lab{font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+      .page-behavior .bh-kpi .val{font-size:24px;font-weight:700;color:var(--text);margin-top:6px;font-variant-numeric:tabular-nums;}
+      .page-behavior .bh-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-bottom:14px;}
+      .page-behavior .bh-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
+      .page-behavior .bh-panel h3{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--text);display:flex;align-items:center;gap:8px;}
+      .page-behavior .bh-panel h3 .hint{margin-left:auto;font-size:11px;color:var(--text-mute);font-weight:500;}
+      .page-behavior .bh-fstep{display:flex;align-items:center;gap:11px;margin-bottom:9px;}
+      .page-behavior .bh-fstep .nm{flex:0 0 110px;font-size:12.5px;color:var(--text-sub);}
+      .page-behavior .bh-fbar-wrap{flex:1;background:var(--bg-soft);border-radius:7px;height:30px;overflow:hidden;}
+      .page-behavior .bh-fbar{height:100%;border-radius:7px;background:linear-gradient(90deg,#2c5f96,#1F4E78);display:flex;align-items:center;padding:0 11px;font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;transition:width .5s;}
+      .page-behavior .bh-fstep .rate{flex:0 0 50px;text-align:right;font-size:11.5px;color:var(--text-mute);font-variant-numeric:tabular-nums;}
+      .page-behavior .bh-malltbl{width:100%;border-collapse:collapse;font-size:13px;}
+      .page-behavior .bh-malltbl th{text-align:left;font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg-soft);}
+      .page-behavior .bh-malltbl th.num,.page-behavior .bh-malltbl td.num{text-align:right;font-variant-numeric:tabular-nums;}
+      .page-behavior .bh-malltbl td{padding:10px 12px;border-bottom:1px solid var(--border-light);}
+      .page-behavior .bh-malltbl tbody tr:hover{background:var(--bg-soft);}
+      @media(max-width:900px){.page-behavior .bh-kpis{grid-template-columns:repeat(2,1fr);}.page-behavior .bh-grid{grid-template-columns:1fr;}}
+    </style>
+    <div class="bh-controls">
+      <select id="bh-mall"></select>
+      <div class="bh-seg" id="bh-period">
+        <button data-d="7">7일</button><button data-d="30" class="on">30일</button><button data-d="90">90일</button><button data-d="0">전체</button>
+      </div>
+      <span id="bh-range" style="font-size:12px;color:var(--text-sub);"></span>
+      <a class="bh-looker" href="https://lookerstudio.google.com/reporting/9d379418-1c23-412f-a8d2-8e15652e8c53" target="_blank" rel="noopener">📊 Looker 상세 ↗</a>
+    </div>
+    <div class="bh-note">GA4 행동 데이터 기준 · 집계 기간 <b id="bh-datainfo">—</b> · 장바구니담기(add_to_cart)는 미수집이라 퍼널에서 제외 · 정확한 매출은 대시보드/회원사 탭 참고</div>
+    <div class="bh-kpis" id="bh-kpis"></div>
+    <div class="bh-grid">
+      <div class="bh-panel">
+        <h3>구매 퍼널 <span class="hint">상품조회 → 장바구니조회 → 결제시작 → 구매</span></h3>
+        <div id="bh-funnel"></div>
+      </div>
+      <div class="bh-panel">
+        <h3>일자별 추이 <span class="hint">세션 · 구매수</span></h3>
+        <div style="position:relative;height:260px;"><canvas id="bh-trend"></canvas></div>
+      </div>
+    </div>
+    <div class="bh-panel">
+      <h3>몰별 비교 <span class="hint">선택 기간 기준 · 전체 몰</span></h3>
+      <div style="overflow-x:auto;">
+        <table class="bh-malltbl">
+          <thead><tr>
+            <th>대리점 (몰)</th><th class="num">사용자</th><th class="num">세션</th>
+            <th class="num">상품조회</th><th class="num">결제시작</th><th class="num">구매</th><th class="num">전환율</th>
+          </tr></thead>
+          <tbody id="bh-malltbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
+  </div>
+</main>
+</div>
+
 <script>
 // ============================================================
 // 통합 라우터 + 페이지 모듈들
@@ -1945,7 +2041,132 @@ const PAGE_META = {
   dashboard: { title: '분석 · 대시보드', module: () => PageDashboard },
   bestseller: { title: '분석 · 베스트셀러', module: () => PageBestseller },
   companies: { title: '분석 · 회원사', module: () => PageCompanies },
+  behavior: { title: '분석 · 고객행동', module: () => PageBehavior },
 };
+
+// 고객행동분석 (admin/staff 전용 · GA4 ga_daily_metrics 커스텀 대시보드)
+const PageBehavior = (function(){
+  let loaded=false, gaRows=[], hostToDealer={}, dealerNames=[], maxDate=null, chart=null;
+  let curMall='all', curDays=30;
+  function isAllowed(){ const r=window.__sbRole; return r==='admin'||r==='staff'; }
+  const num=n=>Math.round(n||0).toLocaleString('ko-KR');
+  function normHost(h){ return String(h||'').replace(/^www\./,'').toLowerCase(); }
+
+  async function loadData(){
+    const sb=window.__sb; if(!sb) return false;
+    try{
+      const [ga, dl] = await Promise.all([
+        sb.from('ga_daily_metrics').select('*').order('date',{ascending:true}),
+        sb.from('dealers').select('*')
+      ]);
+      if(ga.error||dl.error) return false;
+      gaRows = ga.data||[];
+      hostToDealer={}; const nmeSet=new Set();
+      (dl.data||[]).forEach(d=>{
+        const nm=d.dealer_name||d.hostname;
+        hostToDealer[normHost(d.hostname)]=nm;
+        nmeSet.add(nm);
+      });
+      dealerNames=[...nmeSet];
+      maxDate=null; gaRows.forEach(r=>{ if(!maxDate||r.date>maxDate) maxDate=r.date; });
+      return gaRows.length>0;
+    }catch(e){ return false; }
+  }
+
+  function dealerOf(host){ return hostToDealer[normHost(host)] || normHost(host); }
+
+  function cutDateStr(){
+    if(curDays<=0 || !maxDate) return null;
+    const d=new Date(maxDate+'T00:00:00'); d.setDate(d.getDate()-curDays+1);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+
+  function periodRows(){
+    const cs=cutDateStr();
+    return cs ? gaRows.filter(r=>r.date>=cs) : gaRows;
+  }
+  function filteredRows(){
+    let rows=periodRows();
+    if(curMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMall);
+    return rows;
+  }
+  function sum(rows){
+    const k=['active_users','sessions','new_users','page_views','view_item','add_to_cart','view_cart','begin_checkout','purchases','remove_from_cart','searches','revenue'];
+    const o={}; k.forEach(x=>o[x]=0);
+    rows.forEach(r=>k.forEach(x=>o[x]+=(+r[x]||0)));
+    return o;
+  }
+
+  function renderKPIs(s){
+    const conv = s.sessions>0 ? (s.purchases/s.sessions*100) : 0;
+    const cards=[['사용자',num(s.active_users)],['세션',num(s.sessions)],['페이지뷰',num(s.page_views)],['구매수',num(s.purchases)],['구매 전환율',conv.toFixed(2)+'%']];
+    document.getElementById('bh-kpis').innerHTML = cards.map(([l,v])=>`<div class="bh-kpi"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join('');
+  }
+  function renderFunnel(s){
+    const steps=[['상품 조회',s.view_item],['장바구니 조회',s.view_cart],['결제 시작',s.begin_checkout],['구매',s.purchases]];
+    const top=Math.max(steps[0][1],1);
+    document.getElementById('bh-funnel').innerHTML = steps.map(([nm,v],i)=>{
+      const w=Math.max(v/top*100,7), prev=i?steps[i-1][1]:v, rate=i?(prev>0?Math.round(v/prev*100)+'%':'-'):'';
+      return `<div class="bh-fstep"><div class="nm">${nm}</div><div class="bh-fbar-wrap"><div class="bh-fbar" style="width:${w}%">${num(v)}</div></div><div class="rate">${rate}</div></div>`;
+    }).join('');
+  }
+  function renderTrend(rows){
+    const byDate={};
+    rows.forEach(r=>{ const d=r.date; if(!byDate[d]) byDate[d]={s:0,p:0}; byDate[d].s+=(+r.sessions||0); byDate[d].p+=(+r.purchases||0); });
+    const dates=Object.keys(byDate).sort();
+    const canvas=document.getElementById('bh-trend'); if(!canvas) return;
+    if(chart) chart.destroy();
+    chart=new Chart(canvas.getContext('2d'),{ type:'line',
+      data:{ labels:dates, datasets:[
+        {label:'세션',data:dates.map(d=>byDate[d].s),borderColor:'#1F4E78',backgroundColor:'rgba(31,78,120,.08)',tension:.3,borderWidth:2,pointRadius:0,fill:true,yAxisID:'y'},
+        {label:'구매수',data:dates.map(d=>byDate[d].p),borderColor:'#70AD47',backgroundColor:'rgba(112,173,71,.08)',tension:.3,borderWidth:2,pointRadius:0,fill:true,yAxisID:'y1'},
+      ]},
+      options:{ responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'top',align:'end',labels:{font:{family:'Pretendard',size:12},boxWidth:12,color:'#595959'}}},
+        scales:{
+          x:{grid:{display:false},ticks:{font:{family:'Pretendard',size:10},color:'#595959',maxRotation:45,autoSkip:true,maxTicksLimit:10}},
+          y:{position:'left',beginAtZero:true,grid:{color:'#F0F0F0'},ticks:{font:{size:10},color:'#595959'}},
+          y1:{position:'right',beginAtZero:true,grid:{display:false},ticks:{font:{size:10},color:'#595959'}},
+        }
+      }
+    });
+  }
+  function renderMallTable(){
+    const rows=periodRows();
+    const byD={};
+    rows.forEach(r=>{ const dn=dealerOf(r.hostname); if(!byD[dn]) byD[dn]={u:0,s:0,vi:0,bc:0,p:0}; const o=byD[dn]; o.u+=(+r.active_users||0);o.s+=(+r.sessions||0);o.vi+=(+r.view_item||0);o.bc+=(+r.begin_checkout||0);o.p+=(+r.purchases||0); });
+    const arr=Object.entries(byD).map(([n,o])=>({n,...o,conv:o.s>0?o.p/o.s*100:0})).sort((a,b)=>b.s-a.s);
+    document.getElementById('bh-malltbl-body').innerHTML = arr.map(d=>
+      `<tr><td>${d.n}</td><td class="num">${num(d.u)}</td><td class="num">${num(d.s)}</td><td class="num">${num(d.vi)}</td><td class="num">${num(d.bc)}</td><td class="num">${num(d.p)}</td><td class="num">${d.conv.toFixed(2)}%</td></tr>`
+    ).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-mute);">데이터 없음</td></tr>';
+  }
+  function render(){
+    const rows=filteredRows(), s=sum(rows);
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable();
+    const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
+  }
+  function buildControls(){
+    const sel=document.getElementById('bh-mall');
+    sel.innerHTML='<option value="all">전체 통합</option>'+dealerNames.map(n=>`<option value="${n}">${n}</option>`).join('');
+    sel.value=curMall;
+    if(!sel.__wired){ sel.__wired=1; sel.addEventListener('change',()=>{ curMall=sel.value; render(); }); }
+    const seg=document.getElementById('bh-period');
+    if(seg && !seg.__wired){ seg.__wired=1; seg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curDays=+b.dataset.d; render(); })); }
+    const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
+  }
+
+  async function init(){
+    const denied=document.getElementById('behavior-denied'), content=document.getElementById('behavior-content');
+    if(!isAllowed()){ if(denied)denied.style.display='block'; if(content)content.style.display='none'; return; }
+    if(denied)denied.style.display='none'; if(content)content.style.display='block';
+    if(!loaded){
+      const ok=await loadData();
+      if(!ok){ const e=document.getElementById('bh-empty'); if(e)e.style.display='block'; return; }
+      loaded=true; buildControls(); render();
+    }
+  }
+  return { init };
+})();
 
 let currentPage = 'data';
 
@@ -4579,6 +4800,117 @@ function recompute() {
     }catch(e){ if(retry<12) setTimeout(()=>boot(retry+1),1000); }
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>boot(0)); else boot(0);
+})();
+</script>
+<script>
+/* ===== 분석 리포트 다운로드 (엑셀/PDF · 독립 모듈) ===== */
+(function(){
+  function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open('PartnermallAnalyzer',1);r.onerror=()=>rej(r.error);r.onsuccess=()=>res(r.result);});}
+  const DAY=86400000;
+  function fmtDate(t){ if(!t) return '-'; const d=new Date(t); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  function setStatus(t){ const s=document.getElementById('report-status'); if(s)s.textContent=t; }
+
+  async function aggregate(){
+    const db=await openDB();
+    const T={ orderSet:new Set(), companySet:new Set(), dealerSet:new Set(), revenue:0, rows:0, minYM:null, maxYM:null };
+    const monthly={}, dealerAgg={}, catAgg={}, prod={}, cycle={};
+    await new Promise((res,rej)=>{
+      const req=db.transaction('orders','readonly').objectStore('orders').openCursor();
+      req.onsuccess=e=>{ const cur=e.target.result;
+        if(cur){ const r=cur.value; T.rows++;
+          const done=r['처리상태']==='완료';
+          const amt=parseFloat(r['상품금액'])||0;
+          const ym=r['_yearMonth']||'';
+          const dealer=r['주문가맹점']||'(미상)';
+          const comp=r['주문자업체명'];
+          const ono=r['주문번호'];
+          const cat=r['대분류']||'기타';
+          const pkey=String(r['본사상품코드']||r['제품명']||'');
+          const pname=r['제품명']||'(미상)';
+          const qty=parseFloat(r['수량'])||0;
+          if(ono) T.orderSet.add(ono);
+          if(comp) T.companySet.add(comp);
+          if(dealer) T.dealerSet.add(dealer);
+          if(ym && ym!=='UNKNOWN'){ if(!T.minYM||ym<T.minYM)T.minYM=ym; if(!T.maxYM||ym>T.maxYM)T.maxYM=ym; }
+          if(done){
+            T.revenue+=amt;
+            if(ym){ const m=monthly[ym]||(monthly[ym]={rev:0,os:new Set(),cs:new Set()}); m.rev+=amt; if(ono)m.os.add(ono); if(comp)m.cs.add(comp); }
+            const da=dealerAgg[dealer]||(dealerAgg[dealer]={rev:0,os:new Set(),cs:new Set()}); da.rev+=amt; if(ono)da.os.add(ono); if(comp)da.cs.add(comp);
+            const ca=catAgg[cat]||(catAgg[cat]={rev:0,qty:0}); ca.rev+=amt; ca.qty+=qty;
+            const p=prod[pkey]||(prod[pkey]={name:pname,rev:0,qty:0,cs:new Set()}); p.rev+=amt; p.qty+=qty; if(comp)p.cs.add(comp);
+            if(comp){ const y=+r['주문일시(년)'],mo=+r['주문일시(월)'],d=+r['주문일시(일)']; if(y&&mo&&d){ const t=new Date(y,mo-1,d).getTime(); if(!isNaN(t)) (cycle[comp]||(cycle[comp]=new Set())).add(t); } }
+          }
+          cur.continue();
+        } else res();
+      };
+      req.onerror=()=>rej(req.error);
+    });
+    db.close();
+    const summary={ 총주문행수:T.rows, 완료주문수:T.orderSet.size, 총매출_완료:Math.round(T.revenue), 회원사수:T.companySet.size, 대리점수:T.dealerSet.size, 분석기간:(T.minYM&&T.maxYM)?(T.minYM+' ~ '+T.maxYM):'-' };
+    const monthlyArr=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0])).map(([ym,m])=>[ym,Math.round(m.rev),m.os.size,m.cs.size]);
+    const dealerArr=Object.entries(dealerAgg).map(([d,o])=>[d,Math.round(o.rev),o.os.size,o.cs.size]).sort((a,b)=>b[1]-a[1]);
+    const catArr=Object.entries(catAgg).map(([c,o])=>[c,Math.round(o.rev),Math.round(o.qty)]).sort((a,b)=>b[1]-a[1]);
+    const prodArr=Object.values(prod).map(p=>[p.name,Math.round(p.qty),Math.round(p.rev),p.cs.size]).sort((a,b)=>b[2]-a[2]).slice(0,30);
+    let gmax=0; for(const k in cycle) for(const t of cycle[k]) if(t>gmax)gmax=t;
+    const overdue=[];
+    for(const comp in cycle){ const dates=[...cycle[comp]].sort((a,b)=>a-b); const c=dates.length; if(c<2)continue; let sum=0; for(let i=1;i<c;i++)sum+=dates[i]-dates[i-1]; const avg=Math.round((sum/(c-1))/DAY); const last=dates[c-1]; const since=Math.round((gmax-last)/DAY); if(since>avg) overdue.push([comp,c,avg,fmtDate(last),since,since-avg]); }
+    overdue.sort((a,b)=>b[5]-a[5]);
+    return { summary, monthlyArr, dealerArr, catArr, prodArr, overdue, refDate:fmtDate(gmax) };
+  }
+
+  async function makeXlsx(){
+    if(!window.XLSX){ setStatus('엑셀 라이브러리 로드 실패'); return; }
+    setStatus('엑셀 생성 중…');
+    try{
+      const A=await aggregate();
+      const wb=XLSX.utils.book_new();
+      const sumAoa=[['항목','값'],['총 주문 행수',A.summary.총주문행수],['완료 주문수',A.summary.완료주문수],['총 매출(완료)',A.summary.총매출_완료],['회원사 수',A.summary.회원사수],['대리점 수',A.summary.대리점수],['분석 기간',A.summary.분석기간],['생성일시',new Date().toLocaleString('ko-KR')]];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumAoa), '요약');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['월','매출(완료)','주문수','회원사수'],...A.monthlyArr]), '월별매출');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['대리점','매출(완료)','주문수','회원사수'],...A.dealerArr]), '대리점별');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['카테고리','매출(완료)','수량'],...A.catArr]), '카테고리별');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['순위','제품','수량','매출(완료)','구매회원사'],...A.prodArr.map((r,i)=>[i+1,...r])]), '베스트셀러TOP30');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['회원사','구매횟수','평균주기(일)','마지막구매일','경과일수','초과일수'],...A.overdue]), '재구매알림');
+      XLSX.writeFile(wb, '분석리포트_'+new Date().toISOString().slice(0,10)+'.xlsx');
+      setStatus('완료!'); setTimeout(()=>setStatus(''),2000);
+    }catch(e){ setStatus('오류: '+(e.message||e)); }
+  }
+
+  async function makePdf(){
+    setStatus('PDF 준비 중…');
+    try{
+      const A=await aggregate();
+      const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+      const tbl=(head,rows)=>'<table><thead><tr>'+head.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map((c,i)=>'<td'+(i>0?' class=n':'')+'>'+esc(typeof c==='number'?c.toLocaleString('ko-KR'):c)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+      const html='<!DOCTYPE html><html lang=ko><head><meta charset=utf-8><title>분석 리포트</title><style>'
+        +'body{font-family:-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;color:#222;padding:24px;font-size:12px}'
+        +'h1{font-size:20px;color:#1F4E78;margin:0 0 4px}h2{font-size:14px;color:#1F4E78;margin:22px 0 8px;border-bottom:2px solid #1F4E78;padding-bottom:4px}'
+        +'.meta{color:#666;font-size:12px;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:8px}'
+        +'th,td{border:1px solid #ddd;padding:5px 8px;text-align:left}th{background:#f1f5f9;font-size:11px}td.n{text-align:right}th{text-align:right}th:first-child{text-align:left}'
+        +'@media print{h2{page-break-after:avoid}tr{page-break-inside:avoid}}'
+        +'</style></head><body>'
+        +'<h1>3M 파트너몰 분석 리포트</h1>'
+        +'<div class=meta>생성일: '+new Date().toLocaleString('ko-KR')+' · 분석기간: '+esc(A.summary.분석기간)+'</div>'
+        +'<h2>요약</h2>'+tbl(['항목','값'],[['총 주문 행수',A.summary.총주문행수],['완료 주문수',A.summary.완료주문수],['총 매출(완료)',A.summary.총매출_완료+'원'],['회원사 수',A.summary.회원사수],['대리점 수',A.summary.대리점수]])
+        +'<h2>월별 매출</h2>'+tbl(['월','매출(완료)','주문수','회원사수'],A.monthlyArr)
+        +'<h2>대리점별 매출</h2>'+tbl(['대리점','매출(완료)','주문수','회원사수'],A.dealerArr)
+        +'<h2>카테고리별 매출</h2>'+tbl(['카테고리','매출(완료)','수량'],A.catArr)
+        +'<h2>베스트셀러 TOP 30</h2>'+tbl(['순위','제품','수량','매출(완료)','구매회원사'],A.prodArr.map((r,i)=>[i+1,...r]))
+        +'<h2>재구매 시기 지난 회원사 (기준일 '+esc(A.refDate)+', 상위 40)</h2>'+tbl(['회원사','구매횟수','평균주기(일)','마지막구매일','경과일수','초과일수'],A.overdue.slice(0,40))
+        +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr'+'ipt>'
+        +'</body></html>';
+      const w=window.open('','_blank');
+      if(!w){ setStatus('팝업이 차단됐어요. 팝업 허용 후 다시 시도하세요.'); return; }
+      w.document.open(); w.document.write(html); w.document.close();
+      setStatus('인쇄창에서 "PDF로 저장" 선택'); setTimeout(()=>setStatus(''),4000);
+    }catch(e){ setStatus('오류: '+(e.message||e)); }
+  }
+
+  function wire(){
+    const x=document.getElementById('report-xlsx'); if(x&&!x.__w){ x.__w=1; x.addEventListener('click',makeXlsx); }
+    const p=document.getElementById('report-pdf'); if(p&&!p.__w){ p.__w=1; p.addEventListener('click',makePdf); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',wire); else wire();
 })();
 </script>
 </body>
