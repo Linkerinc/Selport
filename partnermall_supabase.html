@@ -1306,7 +1306,21 @@ body {
     btn.textContent='로그아웃';
     btn.style.cssText='padding:6px 14px;border:1px solid var(--border,#2a2e37);border-radius:6px;background:transparent;color:var(--text-sub,#64748b);font-size:12px;cursor:pointer;white-space:nowrap;';
     btn.onclick=window.sbLogout;
-    box.appendChild(badge); box.appendChild(btn);
+    // 분석 리포트 다운로드 (엑셀/PDF) — 모든 탭에서 접근
+    const rptWrap=document.createElement('div');
+    rptWrap.style.cssText='position:relative;';
+    const rptBtn=document.createElement('button');
+    rptBtn.textContent='📥 분석 리포트 ▾';
+    rptBtn.style.cssText='padding:6px 12px;border:1px solid var(--border,#2a2e37);border-radius:6px;background:transparent;color:var(--text-sub,#64748b);font-size:12px;cursor:pointer;white-space:nowrap;';
+    const menu=document.createElement('div');
+    menu.style.cssText='position:absolute;right:0;top:115%;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.14);padding:6px;display:none;z-index:9999;min-width:150px;';
+    const mkItem=(txt,fn)=>{ const a=document.createElement('div'); a.textContent=txt; a.style.cssText='padding:9px 12px;font-size:13px;color:#222;cursor:pointer;border-radius:6px;white-space:nowrap;'; a.onmouseenter=()=>a.style.background='#f1f5f9'; a.onmouseleave=()=>a.style.background='transparent'; a.onclick=()=>{ menu.style.display='none'; if(window.__report) fn(); else alert('잠시 후 다시 시도해주세요 (데이터 준비 중)'); }; return a; };
+    menu.appendChild(mkItem('📊 엑셀 요약', ()=>window.__report.xlsx()));
+    menu.appendChild(mkItem('📄 PDF 리포트', ()=>window.__report.pdf()));
+    rptBtn.onclick=(e)=>{ e.stopPropagation(); menu.style.display=(menu.style.display==='none')?'block':'none'; };
+    document.addEventListener('click',()=>{ menu.style.display='none'; });
+    rptWrap.appendChild(rptBtn); rptWrap.appendChild(menu);
+    box.appendChild(rptWrap); box.appendChild(badge); box.appendChild(btn);
     bar.insertBefore(box, bar.firstChild);
   }
 
@@ -4910,6 +4924,7 @@ function recompute() {
     const x=document.getElementById('report-xlsx'); if(x&&!x.__w){ x.__w=1; x.addEventListener('click',makeXlsx); }
     const p=document.getElementById('report-pdf'); if(p&&!p.__w){ p.__w=1; p.addEventListener('click',makePdf); }
   }
+  window.__report = { xlsx: makeXlsx, pdf: makePdf };
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',wire); else wire();
 })();
 </script>
