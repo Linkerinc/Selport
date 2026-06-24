@@ -1987,7 +1987,7 @@ body {
       .page-behavior .bh-looker:hover{border-color:var(--primary);}
       .page-behavior .bh-note{background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:9px 13px;font-size:12px;color:var(--text-sub);margin-bottom:14px;}
       .page-behavior .bh-note b{color:var(--text);}
-      .page-behavior .bh-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+      .page-behavior .bh-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px;}
       .page-behavior .bh-kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;border-left:3px solid var(--primary);}
       .page-behavior .bh-kpi .lab{font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
       .page-behavior .bh-kpi .val{font-size:24px;font-weight:700;color:var(--text);margin-top:6px;font-variant-numeric:tabular-nums;}
@@ -2006,6 +2006,7 @@ body {
       .page-behavior .bh-malltbl td{padding:10px 12px;border-bottom:1px solid var(--border-light);}
       .page-behavior .bh-malltbl tbody tr:hover{background:var(--bg-soft);}
       @media(max-width:900px){.page-behavior .bh-kpis{grid-template-columns:repeat(2,1fr);}.page-behavior .bh-grid{grid-template-columns:1fr;}}
+      @media(min-width:901px) and (max-width:1280px){.page-behavior .bh-kpis{grid-template-columns:repeat(3,1fr);}}
       .page-behavior .bh-kpi-click{cursor:pointer;transition:box-shadow .15s,transform .15s,border-color .15s;position:relative;}
       .page-behavior .bh-kpi-click:hover{box-shadow:0 4px 14px rgba(31,78,120,.14);transform:translateY(-2px);border-color:var(--primary);}
       .page-behavior .bh-kpi-more{font-size:11px;color:var(--primary);font-weight:600;margin-top:8px;opacity:.65;}
@@ -2041,6 +2042,10 @@ body {
         <h3>일자별 추이 <span class="hint">세션 · 구매수</span></h3>
         <div style="position:relative;height:260px;"><canvas id="bh-trend"></canvas></div>
       </div>
+    </div>
+    <div class="bh-panel">
+      <h3>신규 vs 기존 고객 <span class="hint">전체 사용자 중 신규 비율 · 선택 기간 기준</span></h3>
+      <div id="bh-newret"></div>
     </div>
     <div class="bh-panel">
       <h3>몰별 비교 <span class="hint">선택 기간 기준 · 전체 몰</span></h3>
@@ -2130,6 +2135,7 @@ const PageBehavior = (function(){
   let detailChart=null, modalWired=false;
   const METRIC_META={
     active_users:{label:'사용자',key:'active_users',ratio:false},
+    new_users:{label:'신규 사용자',key:'new_users',ratio:false},
     sessions:{label:'세션',key:'sessions',ratio:false},
     page_views:{label:'페이지뷰',key:'page_views',ratio:false},
     purchases:{label:'구매수',key:'purchases',ratio:false},
@@ -2196,6 +2202,7 @@ const PageBehavior = (function(){
     const conv = s.sessions>0 ? (s.purchases/s.sessions*100) : 0;
     const cards=[
       ['active_users','사용자',num(s.active_users)],
+      ['new_users','신규 사용자',num(s.new_users)],
       ['sessions','세션',num(s.sessions)],
       ['page_views','페이지뷰',num(s.page_views)],
       ['purchases','구매수',num(s.purchases)],
@@ -2399,9 +2406,42 @@ const PageBehavior = (function(){
       return `<tr><td class="num" style="color:var(--text-mute);">${i+1}</td><td><div style="max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(o.n)}">${esc(o.n)}</div></td><td class="num">${num(o.v)}</td><td class="num">${num(o.p)}</td><td class="num" style="font-weight:700;color:${col};">${c.toFixed(1)}%</td></tr>`;
     }).join('');
   }
+  function renderNewRet(){
+    const box=document.getElementById('bh-newret'); if(!box) return;
+    const rows=filteredRows();
+    const totalU=rows.reduce((a,r)=>a+(+r.active_users||0),0);
+    const newU=rows.reduce((a,r)=>a+(+r.new_users||0),0);
+    const retU=Math.max(totalU-newU,0);
+    const tot=newU+retU||1;
+    const newPct=newU/tot*100, retPct=retU/tot*100;
+    const byMall={};
+    periodRows().forEach(r=>{ const dn=dealerOf(r.hostname); if(!byMall[dn])byMall[dn]={u:0,n:0}; byMall[dn].u+=(+r.active_users||0); byMall[dn].n+=(+r.new_users||0); });
+    const marr=Object.entries(byMall).map(([n,o])=>({n,u:o.u,nw:o.n,rt:Math.max(o.u-o.n,0),pct:o.u>0?o.n/o.u*100:0})).sort((a,b)=>b.u-a.u);
+    box.innerHTML = `
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin-bottom:18px;">
+        <div style="display:flex;gap:22px;">
+          <div><div style="font-size:11px;color:var(--text-mute);font-weight:600;">신규 고객</div><div style="font-size:24px;font-weight:700;color:#1F4E78;font-variant-numeric:tabular-nums;">${num(newU)}</div><div style="font-size:12px;color:var(--text-sub);">${newPct.toFixed(1)}%</div></div>
+          <div><div style="font-size:11px;color:var(--text-mute);font-weight:600;">기존(재방문)</div><div style="font-size:24px;font-weight:700;color:#64748b;font-variant-numeric:tabular-nums;">${num(retU)}</div><div style="font-size:12px;color:var(--text-sub);">${retPct.toFixed(1)}%</div></div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;background:var(--bg-soft);">
+            <div style="width:${newPct}%;background:#1F4E78;"></div>
+            <div style="width:${retPct}%;background:#cbd5e1;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;">
+            <span style="color:#1F4E78;font-weight:600;">● 신규 ${newPct.toFixed(1)}%</span>
+            <span style="color:#94a3b8;font-weight:600;">기존 ${retPct.toFixed(1)}% ●</span>
+          </div>
+        </div>
+      </div>
+      <div style="overflow-x:auto;"><table class="bh-malltbl">
+        <thead><tr><th>대리점 (몰)</th><th class="num">전체</th><th class="num">신규</th><th class="num">기존</th><th class="num">신규 비율</th></tr></thead>
+        <tbody>${marr.length? marr.map(d=>`<tr><td>${esc(d.n)}</td><td class="num">${num(d.u)}</td><td class="num" style="color:#1F4E78;font-weight:600;">${num(d.nw)}</td><td class="num">${num(d.rt)}</td><td class="num">${d.pct.toFixed(1)}%</td></tr>`).join('') : '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-mute);">데이터 없음</td></tr>'}</tbody>
+      </table></div>`;
+  }
   function render(){
     const rows=filteredRows(), s=sum(rows);
-    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderPages(); renderItems(); renderItemConv();
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderNewRet(); renderPages(); renderItems(); renderItemConv();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
   }
   function buildControls(){
