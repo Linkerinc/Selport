@@ -2068,6 +2068,10 @@ body {
       </div>
       <div class="bh-panel">
         <h3>🛒 상품 조회 TOP <span class="hint">많이 본 상품 (조회수 기준)</span></h3>
+        <div style="margin-bottom:11px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--text-sub);">대리점</span>
+          <select id="bh-item-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+        </div>
         <div id="bh-item-list"></div>
       </div>
     </div>
@@ -2145,6 +2149,7 @@ const PageBehavior = (function(){
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
+  let curItemMall='all';
   let detailChart=null, modalWired=false;
   let dealerFirst=null, dealerChart=null;
   const METRIC_META={
@@ -2414,23 +2419,11 @@ const PageBehavior = (function(){
       <div style="display:flex;align-items:flex-end;gap:2px;height:48px;margin-bottom:18px;">${spark||'<span style="font-size:12px;color:var(--text-mute);">데이터 없음</span>'}</div>
       <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">대리점(몰)별 · 실제 페이지 열기</div>
       <div style="overflow-x:auto;"><table class="bh-malltbl">
-        <thead><tr><th>대리점 (몰)</th><th class="num">조회수</th><th class="num">평균 체류</th><th>주소</th></tr></thead>
-        <tbody>${darr.map(d=>{ const url='https://'+d.bestHost+path; const avg=d.users>0?d.engW/d.users:0;
-          return `<tr><td>${esc(d.dealer)}</td><td class="num">${num(d.views)}</td><td class="num">${secToStr(avg)}</td><td><button class="bh-copy-btn" data-url="${esc(url)}" title="${esc(url)}" style="border:1px solid var(--border);background:#fff;color:#1F4E78;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;cursor:pointer;white-space:nowrap;">주소 복사 📋</button></td></tr>`;
+        <thead><tr><th>대리점 (몰)</th><th class="num">조회수</th><th class="num">평균 체류</th></tr></thead>
+        <tbody>${darr.map(d=>{ const avg=d.users>0?d.engW/d.users:0;
+          return `<tr><td>${esc(d.dealer)}</td><td class="num">${num(d.views)}</td><td class="num">${secToStr(avg)}</td></tr>`;
         }).join('')}</tbody>
       </table></div>`;
-    el.querySelectorAll('.bh-copy-btn').forEach(btn=>{ btn.onclick=()=>copyPageUrl(btn); });
-  }
-  function copyPageUrl(btn){
-    const url=btn.dataset.url||'';
-    const done=()=>{ const old=btn.textContent; btn.textContent='복사됨 ✓'; btn.style.color='#16a34a'; btn.style.borderColor='#16a34a'; setTimeout(()=>{ btn.textContent=old; btn.style.color='#1F4E78'; btn.style.borderColor='var(--border)'; },1400); };
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(url).then(done).catch(()=>fallbackCopy(url,done));
-    } else { fallbackCopy(url,done); }
-  }
-  function fallbackCopy(text, done){
-    try{ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done&&done(); }
-    catch(e){ prompt('아래 주소를 복사하세요:', text); }
   }
   function itemFilteredRows(){
     const cs=cutDateStr(); let rows=itemRows;
@@ -2438,31 +2431,27 @@ const PageBehavior = (function(){
     if(curMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMall);
     return rows;
   }
+  function itemRowsForPanel(){
+    const cs=cutDateStr(); let rows=itemRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curItemMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curItemMall);
+    return rows;
+  }
   function renderItems(){
     const box=document.getElementById('bh-item-list'); if(!box) return;
-    const rows=itemFilteredRows();
+    const rows=itemRowsForPanel();
     const byName={};
-    rows.forEach(r=>{ const n=r.item_name||'(미상)'; if(!byName[n])byName[n]={v:0,p:0}; byName[n].v+=(+r.items_viewed||0); byName[n].p+=(+r.items_purchased||0); });
-    const arr=Object.entries(byName).map(([n,o])=>({n,v:o.v,p:o.p,conv:o.v>0?o.p/o.v*100:0})).sort((a,b)=>b.v-a.v).slice(0,15);
+    rows.forEach(r=>{ const n=r.item_name||'(미상)'; byName[n]=(byName[n]||0)+(+r.items_viewed||0); });
+    const arr=Object.entries(byName).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,15);
     if(!arr.length){ box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);">데이터 없음</div>'; return; }
     const top=Math.max(arr[0].v,1);
-    box.innerHTML=arr.map(it=>{
-      const wv=Math.max(it.v/top*100,4);
-      const wc=Math.max(Math.min(it.conv,100),0);
-      return `<div style="margin-bottom:13px;">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
-          <div style="flex:1;min-width:0;font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(it.n)}">${esc(it.n)}</div>
-          <div style="flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${num(it.v)}</div>
+    box.innerHTML=arr.map(it=>{ const w=Math.max(it.v/top*100,4);
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(it.n)}">${esc(it.n)}</div>
+          <div style="height:6px;background:var(--bg-soft);border-radius:4px;margin-top:4px;"><div style="height:100%;width:${w}%;background:linear-gradient(90deg,#2c5f96,#1F4E78);border-radius:4px;"></div></div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
-          <div style="flex:0 0 30px;font-size:10px;color:var(--text-mute);">조회</div>
-          <div style="flex:1;height:6px;background:var(--bg-soft);border-radius:4px;"><div style="height:100%;width:${wv}%;background:linear-gradient(90deg,#2c5f96,#1F4E78);border-radius:4px;"></div></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="flex:0 0 30px;font-size:10px;color:var(--text-mute);">전환</div>
-          <div style="flex:1;height:6px;background:var(--bg-soft);border-radius:4px;"><div style="height:100%;width:${wc}%;background:linear-gradient(90deg,#34d399,#16a34a);border-radius:4px;"></div></div>
-          <div style="flex:0 0 46px;text-align:right;font-size:11.5px;font-weight:700;color:#16a34a;font-variant-numeric:tabular-nums;">${it.conv.toFixed(1)}%</div>
-        </div>
+        <div style="flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${num(it.v)}</div>
       </div>`;
     }).join('');
   }
@@ -2574,6 +2563,12 @@ const PageBehavior = (function(){
     if(seg && !seg.__wired){ seg.__wired=1; seg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curDays=+b.dataset.d; render(); })); }
     const mseg=document.getElementById('bh-iconv-min');
     if(mseg && !mseg.__wired){ mseg.__wired=1; mseg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ mseg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curMinView=+b.dataset.m; renderItemConv(); })); }
+    const isel=document.getElementById('bh-item-mall');
+    if(isel && !isel.__wired){ isel.__wired=1;
+      const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
+      isel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      isel.addEventListener('change',()=>{ curItemMall=isel.value; renderItems(); });
+    }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
 
