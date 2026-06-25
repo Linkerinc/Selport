@@ -1236,15 +1236,20 @@ body {
   async function fillFromSupabase(){
     loginBox.style.display='none'; loadingBox.style.display='block';
     const prog=$('sb-progress');
+    // 권한 확인: 대리점(dealer) 계정이면 본인 대리점 주문만 내려받음
+    let myDealer=null;
+    try{ const me=await getMyRole(); if(me.role==='dealer' && me.dealer_name) myDealer=me.dealer_name; }catch(e){}
     let total=0;
-    try{ const c=await sb.from('orders').select('id',{count:'exact',head:true}); total=c.count||0; }catch(e){}
+    try{ let q=sb.from('orders').select('id',{count:'exact',head:true}); if(myDealer) q=q.eq('주문가맹점',myDealer); const c=await q; total=c.count||0; }catch(e){}
     const PAGE=1000, CONC=6;
     const results=[]; let loaded=0, pageIdx=0, endReached=false;
     async function fetchPageData(i){
       let attempt=0;
       while(true){
         attempt++;
-        const { data, error } = await sb.from('orders').select('*').order('id',{ascending:true}).range(i*PAGE,i*PAGE+PAGE-1);
+        let q=sb.from('orders').select('*').order('id',{ascending:true}).range(i*PAGE,i*PAGE+PAGE-1);
+        if(myDealer) q=q.eq('주문가맹점',myDealer);
+        const { data, error } = await q;
         if(error){ if(attempt<4){ await new Promise(r=>setTimeout(r,600)); continue; } throw error; }
         return data||[];
       }
