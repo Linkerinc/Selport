@@ -1805,7 +1805,8 @@ body {
           <div id="cycle-sub" style="font-size:12px;color:var(--text-sub,#64748b);margin-top:4px;">계산 중…</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <input id="cycle-search" placeholder="회원사 검색" style="padding:7px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:13px;min-width:150px;">
+          <select id="cycle-dealer" style="padding:7px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:13px;background:#fff;max-width:200px;"><option value="all">전체 대리점</option></select>
+          <input id="cycle-search" placeholder="회원사·ID 검색" style="padding:7px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:13px;min-width:150px;">
           <label style="font-size:12px;color:var(--text-sub,#64748b);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="cycle-only-overdue" checked> 재구매 시기 지난 곳만</label>
           <button id="cycle-export" style="padding:7px 12px;border:1px solid var(--border,#cbd5e1);border-radius:6px;background:transparent;color:var(--text-sub,#64748b);font-size:12px;cursor:pointer;">CSV 내보내기</button>
         </div>
@@ -1815,6 +1816,9 @@ body {
           <thead style="position:sticky;top:0;background:var(--bg-soft,#f1f5f9);z-index:1;">
             <tr>
               <th style="text-align:left;padding:10px 12px;">회원사</th>
+              <th style="text-align:left;padding:10px 12px;">ID</th>
+              <th style="text-align:left;padding:10px 12px;">회원등급</th>
+              <th style="text-align:left;padding:10px 12px;">연락처</th>
               <th style="text-align:right;padding:10px 12px;">구매횟수</th>
               <th style="text-align:right;padding:10px 12px;">평균주기(일)</th>
               <th style="text-align:left;padding:10px 12px;">마지막 구매일</th>
@@ -5148,7 +5152,18 @@ function recompute() {
             const comp=r['주문자업체명'];
             const y=+r['주문일시(년)'], m=+r['주문일시(월)'], d=+r['주문일시(일)'];
             if(comp && y && m && d){ const t=new Date(y,m-1,d).getTime();
-              if(!isNaN(t)){ let s=map.get(comp); if(!s){s=new Set();map.set(comp,s);} s.add(t); } }
+              if(!isNaN(t)){ let s=map.get(comp);
+                if(!s){ s={set:new Set(),lastT:0,dealer:'',id:'',grade:'',email:'',phone:'',mtype:''}; map.set(comp,s); }
+                s.set.add(t);
+                if(t>=s.lastT){ s.lastT=t;
+                  s.dealer=r['주문가맹점']||s.dealer;
+                  s.id=r['주문자ID']||s.id;
+                  s.grade=r['대리점회원등급']||s.grade;
+                  s.email=r['주문자이메일']||s.email;
+                  s.phone=r['주문자휴대폰']||r['주문자 전화번호']||s.phone;
+                  s.mtype=r['주문자회원구분']||s.mtype;
+                }
+              } }
           }
           cur.continue();
         } else res();
@@ -5156,53 +5171,76 @@ function recompute() {
       req.onerror=()=>rej(req.error);
     });
     db.close();
-    let gmax=0; map.forEach(s=>s.forEach(t=>{ if(t>gmax) gmax=t; }));
+    let gmax=0; map.forEach(s=>s.set.forEach(t=>{ if(t>gmax) gmax=t; }));
     refDate=gmax;
     const out=[];
     map.forEach((s,comp)=>{
-      const dates=[...s].sort((a,b)=>a-b);
+      const dates=[...s.set].sort((a,b)=>a-b);
       const count=dates.length, last=dates[count-1];
       const daysSince=Math.round((gmax-last)/DAY);
       let avg=null;
       if(count>=2){ let sum=0; for(let i=1;i<count;i++) sum+=(dates[i]-dates[i-1]); avg=Math.round((sum/(count-1))/DAY); }
-      out.push({comp,count,last,daysSince,avg,over:(avg!=null && daysSince>avg),overBy:(avg!=null?daysSince-avg:-1)});
+      out.push({comp,count,last,daysSince,avg,over:(avg!=null && daysSince>avg),overBy:(avg!=null?daysSince-avg:-1),
+        dealer:s.dealer,id:s.id,grade:s.grade,email:s.email,phone:s.phone,mtype:s.mtype});
     });
     rows=out;
+  }
+  function populateDealers(){
+    const sel=document.getElementById('cycle-dealer'); if(!sel||sel.__filled) return;
+    const set=new Set(); rows.forEach(r=>{ if(r.dealer) set.add(r.dealer); });
+    const names=[...set].sort((a,b)=>a.localeCompare(b,'ko'));
+    sel.innerHTML='<option value="all">전체 대리점</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
+    sel.__filled=1;
   }
 
   function render(){
     const tbody=document.getElementById('cycle-tbody'); if(!tbody) return;
+    populateDealers();
     const q=(document.getElementById('cycle-search').value||'').trim().toLowerCase();
     const onlyOver=document.getElementById('cycle-only-overdue').checked;
+    const dsel=document.getElementById('cycle-dealer'); const dealer=dsel?dsel.value:'all';
     let list=rows.filter(r=>r.avg!=null);
+    if(dealer!=='all') list=list.filter(r=>r.dealer===dealer);
     if(onlyOver) list=list.filter(r=>r.over);
-    if(q) list=list.filter(r=>r.comp.toLowerCase().indexOf(q)>=0);
+    if(q) list=list.filter(r=>r.comp.toLowerCase().indexOf(q)>=0 || (r.id&&r.id.toLowerCase().indexOf(q)>=0));
     list.sort((a,b)=>b.overBy-a.overBy);
-    const overdueCount=rows.filter(r=>r.over).length;
-    const eligible=rows.filter(r=>r.avg!=null).length;
+    const scope = dealer==='all'?rows:rows.filter(r=>r.dealer===dealer);
+    const overdueCount=scope.filter(r=>r.over).length;
+    const eligible=scope.filter(r=>r.avg!=null).length;
     const sub=document.getElementById('cycle-sub');
-    if(sub) sub.textContent='기준일 '+fmtDate(refDate)+' · 분석 대상 '+eligible.toLocaleString()+'개사(2회 이상 구매) · 재구매 시기 지남 '+overdueCount.toLocaleString()+'개사';
-    const cap=list.slice(0,300);
+    if(sub) sub.textContent='기준일 '+fmtDate(refDate)+' · 분석 대상 '+eligible.toLocaleString()+'개사(2회 이상 구매) · 재구매 시기 지남 '+overdueCount.toLocaleString()+'개사'+(dealer!=='all'?' · '+dealer:'');
+    const cap=list.slice(0,500);
     tbody.innerHTML = cap.map(r=>{
       const red=r.over, statusTxt=r.over?('지남 '+r.overBy+'일'):'정상', statusColor=r.over?'#dc2626':'#16a34a';
       return '<tr style="border-top:1px solid var(--border,#eee);'+(red?'background:rgba(220,38,38,0.06);':'')+'">'
         +'<td style="padding:9px 12px;font-weight:'+(red?'600':'400')+';">'+esc(r.comp)+'</td>'
+        +'<td style="padding:9px 12px;color:var(--text-sub,#64748b);">'+esc(r.id||'-')+'</td>'
+        +'<td style="padding:9px 12px;font-size:12px;">'+esc(r.grade||'-')+'</td>'
+        +'<td style="padding:9px 12px;font-size:12px;">'+esc(r.phone||'-')+'</td>'
         +'<td style="padding:9px 12px;text-align:right;">'+r.count+'</td>'
         +'<td style="padding:9px 12px;text-align:right;">'+r.avg+'</td>'
         +'<td style="padding:9px 12px;">'+fmtDate(r.last)+'</td>'
         +'<td style="padding:9px 12px;text-align:right;'+(red?'color:#dc2626;font-weight:600;':'')+'">'+r.daysSince+'</td>'
         +'<td style="padding:9px 12px;text-align:right;color:'+statusColor+';font-weight:600;">'+statusTxt+'</td></tr>';
-    }).join('') || '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-mute,#94a3b8);">해당하는 회원사가 없습니다.</td></tr>';
+    }).join('') || '<tr><td colspan="9" style="padding:16px;text-align:center;color:var(--text-mute,#94a3b8);">해당하는 회원사가 없습니다.</td></tr>';
   }
 
   function exportCsv(){
     const onlyOver=document.getElementById('cycle-only-overdue').checked;
-    let list=rows.filter(r=>r.avg!=null); if(onlyOver) list=list.filter(r=>r.over);
+    const dsel=document.getElementById('cycle-dealer'); const dealer=dsel?dsel.value:'all';
+    let list=rows.filter(r=>r.avg!=null);
+    if(dealer!=='all') list=list.filter(r=>r.dealer===dealer);
+    if(onlyOver) list=list.filter(r=>r.over);
     list.sort((a,b)=>b.overBy-a.overBy);
-    const head=['회원사','구매횟수','평균주기(일)','마지막구매일','경과일수','상태'];
-    const lines=[head.join(',')].concat(list.map(r=>['"'+r.comp.replace(/"/g,'""')+'"',r.count,r.avg,fmtDate(r.last),r.daysSince,(r.over?('지남 '+r.overBy+'일'):'정상')].join(',')));
+    const head=['대리점','회원사','ID','회원등급','회원구분','이메일','연락처','구매횟수','평균주기(일)','마지막구매일','경과일수','상태'];
+    const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const lines=[head.join(',')].concat(list.map(r=>[
+      cell(r.dealer),cell(r.comp),cell(r.id),cell(r.grade),cell(r.mtype),cell(r.email),cell(r.phone),
+      r.count,r.avg,fmtDate(r.last),r.daysSince,cell(r.over?('지남 '+r.overBy+'일'):'정상')
+    ].join(',')));
     const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='구매주기_재구매알림.csv'; a.click();
+    const tag=(dealer==='all'?'전체':dealer).replace(/[\\/:*?"<>|]/g,'');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='구매주기_'+tag+'_'+fmtDate(refDate)+'.csv'; a.click();
   }
 
   async function boot(retry){
@@ -5212,6 +5250,7 @@ function recompute() {
       if(rows.length===0 && retry<12){ setTimeout(()=>boot(retry+1),1000); return; }
       render();
       const s=document.getElementById('cycle-search'); if(s&&!s.__wired){ s.__wired=1; s.addEventListener('input',render); }
+      const dd=document.getElementById('cycle-dealer'); if(dd&&!dd.__wired){ dd.__wired=1; dd.addEventListener('change',render); }
       const o=document.getElementById('cycle-only-overdue'); if(o&&!o.__wired){ o.__wired=1; o.addEventListener('change',render); }
       const x=document.getElementById('cycle-export'); if(x&&!x.__wired){ x.__wired=1; x.addEventListener('click',exportCsv); }
     }catch(e){ if(retry<12) setTimeout(()=>boot(retry+1),1000); }
