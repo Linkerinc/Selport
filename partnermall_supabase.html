@@ -2414,11 +2414,23 @@ const PageBehavior = (function(){
       <div style="display:flex;align-items:flex-end;gap:2px;height:48px;margin-bottom:18px;">${spark||'<span style="font-size:12px;color:var(--text-mute);">데이터 없음</span>'}</div>
       <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">대리점(몰)별 · 실제 페이지 열기</div>
       <div style="overflow-x:auto;"><table class="bh-malltbl">
-        <thead><tr><th>대리점 (몰)</th><th class="num">조회수</th><th class="num">평균 체류</th><th>링크</th></tr></thead>
+        <thead><tr><th>대리점 (몰)</th><th class="num">조회수</th><th class="num">평균 체류</th><th>주소</th></tr></thead>
         <tbody>${darr.map(d=>{ const url='https://'+d.bestHost+path; const avg=d.users>0?d.engW/d.users:0;
-          return `<tr><td>${esc(d.dealer)}</td><td class="num">${num(d.views)}</td><td class="num">${secToStr(avg)}</td><td><a href="${esc(url)}" target="_blank" rel="noopener" style="color:#1F4E78;font-size:12px;text-decoration:none;font-weight:600;">열기 ↗</a></td></tr>`;
+          return `<tr><td>${esc(d.dealer)}</td><td class="num">${num(d.views)}</td><td class="num">${secToStr(avg)}</td><td><button class="bh-copy-btn" data-url="${esc(url)}" title="${esc(url)}" style="border:1px solid var(--border);background:#fff;color:#1F4E78;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;cursor:pointer;white-space:nowrap;">주소 복사 📋</button></td></tr>`;
         }).join('')}</tbody>
       </table></div>`;
+    el.querySelectorAll('.bh-copy-btn').forEach(btn=>{ btn.onclick=()=>copyPageUrl(btn); });
+  }
+  function copyPageUrl(btn){
+    const url=btn.dataset.url||'';
+    const done=()=>{ const old=btn.textContent; btn.textContent='복사됨 ✓'; btn.style.color='#16a34a'; btn.style.borderColor='#16a34a'; setTimeout(()=>{ btn.textContent=old; btn.style.color='#1F4E78'; btn.style.borderColor='var(--border)'; },1400); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done).catch(()=>fallbackCopy(url,done));
+    } else { fallbackCopy(url,done); }
+  }
+  function fallbackCopy(text, done){
+    try{ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done&&done(); }
+    catch(e){ prompt('아래 주소를 복사하세요:', text); }
   }
   function itemFilteredRows(){
     const cs=cutDateStr(); let rows=itemRows;
