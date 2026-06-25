@@ -2142,6 +2142,7 @@ const PAGE_META = {
 const PageBehavior = (function(){
   let loaded=false, gaRows=[], hostToDealer={}, dealerNames=[], maxDate=null, chart=null;
   let pageRows=[], itemRows=[], searchRows=[];
+  let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
   let detailChart=null, modalWired=false;
@@ -2373,10 +2374,51 @@ const PageBehavior = (function(){
     rows.forEach(r=>{ const p=r.page_path||'(미상)'; if(!byPath[p]) byPath[p]={views:0,users:0,engW:0}; const o=byPath[p];
       const v=+r.page_views||0, u=+r.active_users||0, e=+r.avg_engagement_sec||0; o.views+=v; o.users+=u; o.engW+=e*u; });
     const arr=Object.entries(byPath).map(([path,o])=>({path,views:o.views,avgEng:o.users>0?o.engW/o.users:0})).sort((a,b)=>b.views-a.views).slice(0,15);
+    pageArr=arr;
     if(!arr.length){ body.innerHTML='<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-mute);">데이터 없음</td></tr>'; return; }
-    body.innerHTML=arr.map(p=>{ const fr=PATH_NAMES[p.path], label=fr||p.path, sub=fr?p.path:'';
-      return `<tr><td><div style="font-weight:600;">${esc(label)}</div>${sub?`<div style="font-size:11px;color:var(--text-mute);">${esc(sub)}</div>`:''}</td><td class="num">${num(p.views)}</td><td class="num">${secToStr(p.avgEng)}</td></tr>`;
+    body.innerHTML=arr.map((p,i)=>{ const fr=PATH_NAMES[p.path], label=fr||p.path, sub=fr?p.path:'';
+      return `<tr class="bh-page-row" data-idx="${i}" style="cursor:pointer;">
+        <td><div style="display:flex;align-items:center;gap:7px;"><span class="bh-page-caret" style="color:var(--text-mute);font-size:10px;width:10px;">▸</span><div><div style="font-weight:600;">${esc(label)}</div>${sub?`<div style="font-size:11px;color:var(--text-mute);">${esc(sub)}</div>`:''}</div></div></td>
+        <td class="num">${num(p.views)}</td><td class="num">${secToStr(p.avgEng)}</td></tr>
+        <tr class="bh-page-detail" data-idx="${i}" style="display:none;"><td colspan="3" style="background:var(--bg-soft);padding:0;"><div class="bh-page-detail-inner" style="padding:14px 16px;"></div></td></tr>`;
     }).join('');
+    body.querySelectorAll('.bh-page-row').forEach(tr=>{ tr.onclick=()=>togglePageDetail(+tr.dataset.idx, tr); });
+  }
+  function togglePageDetail(idx, rowEl){
+    const body=document.getElementById('bh-page-body'); if(!body) return;
+    const detail=body.querySelector('.bh-page-detail[data-idx="'+idx+'"]'); if(!detail) return;
+    const caret=rowEl.querySelector('.bh-page-caret');
+    const open = detail.style.display==='none';
+    detail.style.display = open ? 'table-row' : 'none';
+    if(caret) caret.textContent = open ? '▾' : '▸';
+    if(open && !detail.dataset.rendered){
+      detail.dataset.rendered='1';
+      renderPageDetail(pageArr[idx].path, detail.querySelector('.bh-page-detail-inner'));
+    }
+  }
+  function renderPageDetail(path, el){
+    if(!el) return;
+    const rows=pageFilteredRows().filter(r=>(r.page_path||'(미상)')===path);
+    // 일자별
+    const byDate={}; rows.forEach(r=>{ byDate[r.date]=(byDate[r.date]||0)+(+r.page_views||0); });
+    const dates=Object.keys(byDate).sort();
+    const maxv=Math.max.apply(null, dates.map(d=>byDate[d]).concat([1]));
+    const spark=dates.map(d=>`<div title="${d}: ${num(byDate[d])}회" style="flex:1;min-width:3px;display:flex;align-items:flex-end;"><div style="width:100%;height:${Math.max(byDate[d]/maxv*44,2)}px;background:#1F4E78;border-radius:2px 2px 0 0;"></div></div>`).join('');
+    // 몰별 (www 합치기 = dealerOf 기준)
+    const byHost={}; rows.forEach(r=>{ const h=r.hostname; if(!byHost[h])byHost[h]={views:0,users:0,engW:0}; byHost[h].views+=(+r.page_views||0); byHost[h].users+=(+r.active_users||0); byHost[h].engW+=(+r.avg_engagement_sec||0)*(+r.active_users||0); });
+    const byDealer={};
+    Object.entries(byHost).forEach(([h,o])=>{ const dn=dealerOf(h); if(!byDealer[dn])byDealer[dn]={dealer:dn,views:0,users:0,engW:0,bestHost:h,bestViews:-1}; const d=byDealer[dn]; d.views+=o.views; d.users+=o.users; d.engW+=o.engW; if(o.views>d.bestViews){d.bestViews=o.views; d.bestHost=h;} });
+    const darr=Object.values(byDealer).sort((a,b)=>b.views-a.views);
+    el.innerHTML=`
+      <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">일자별 조회수 <span style="font-weight:500;color:var(--text-mute);">· 막대에 마우스 올리면 날짜·수치</span></div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:48px;margin-bottom:18px;">${spark||'<span style="font-size:12px;color:var(--text-mute);">데이터 없음</span>'}</div>
+      <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">대리점(몰)별 · 실제 페이지 열기</div>
+      <div style="overflow-x:auto;"><table class="bh-malltbl">
+        <thead><tr><th>대리점 (몰)</th><th class="num">조회수</th><th class="num">평균 체류</th><th>링크</th></tr></thead>
+        <tbody>${darr.map(d=>{ const url='https://'+d.bestHost+path; const avg=d.users>0?d.engW/d.users:0;
+          return `<tr><td>${esc(d.dealer)}</td><td class="num">${num(d.views)}</td><td class="num">${secToStr(avg)}</td><td><a href="${esc(url)}" target="_blank" rel="noopener" style="color:#1F4E78;font-size:12px;text-decoration:none;font-weight:600;">열기 ↗</a></td></tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
   }
   function itemFilteredRows(){
     const cs=cutDateStr(); let rows=itemRows;
