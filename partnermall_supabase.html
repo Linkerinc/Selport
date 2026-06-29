@@ -2005,6 +2005,24 @@ body {
       <div id="sa-period" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;"></div>
       <div style="font-size:12px;color:var(--text-sub,#64748b);margin:18px 0 8px;">최근 12개월 매출 추이</div>
       <div id="sa-trend" style="display:flex;align-items:flex-end;gap:6px;min-height:140px;"></div>
+
+      <div style="border-top:1px solid var(--border,#e5e7eb);margin-top:20px;padding-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:13px;font-weight:700;">📅 연도 비교</span>
+            <select id="sa-yA" style="padding:6px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:12.5px;background:#fff;"></select>
+            <span style="font-size:12px;color:var(--text-sub,#64748b);">vs</span>
+            <select id="sa-yB" style="padding:6px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:12.5px;background:#fff;"></select>
+          </div>
+          <div id="sa-ymetric" style="display:inline-flex;border:1px solid var(--border,#cbd5e1);border-radius:7px;overflow:hidden;">
+            <button data-m="amt" class="on" style="border:0;background:var(--primary,#1F4E78);color:#fff;font-size:12px;padding:6px 12px;cursor:pointer;">매출</button>
+            <button data-m="cnt" style="border:0;background:#fff;color:var(--text-sub,#64748b);font-size:12px;padding:6px 12px;cursor:pointer;">주문건수</button>
+            <button data-m="qty" style="border:0;background:#fff;color:var(--text-sub,#64748b);font-size:12px;padding:6px 12px;cursor:pointer;">수량</button>
+          </div>
+        </div>
+        <div id="sa-yearlegend" style="display:flex;gap:16px;font-size:11.5px;color:var(--text-sub,#64748b);margin-bottom:8px;"></div>
+        <div id="sa-year" style="display:flex;align-items:flex-end;gap:4px;min-height:150px;"></div>
+      </div>
     </div>
 
     <!-- 카테고리 분석 (대분류 → 중분류 → 소분류 드릴다운) -->
@@ -5474,6 +5492,7 @@ const PageSales = (function(){
   const DB='PartnermallAnalyzer';
   let rows=null, dealers=[], curDealer='all', catPeriod='all';
   let drill={l1:null,l2:null}, wired=false;
+  let yearA=null, yearB=null, yearMetric='amt';
 
   function openDB(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
   function num(n){ return Math.round(n||0).toLocaleString(); }
@@ -5599,12 +5618,60 @@ const PageSales = (function(){
     }).join('');
   }
 
-  function renderAll(){ renderPeriod(); renderTrend(); renderCat(); }
+  function renderYear(){
+    const box=document.getElementById('sa-year'); if(!box) return;
+    const data=filtered();
+    const metric=yearMetric;
+    function monthVal(year,m){
+      const list=data.filter(r=>Math.floor(r.ym/100)===year && (r.ym%100)===m);
+      if(metric==='amt') return list.reduce((s,r)=>s+r.amt,0);
+      if(metric==='qty') return list.reduce((s,r)=>s+r.qty,0);
+      const o=new Set(); list.forEach(r=>{ if(r.ord)o.add(r.ord); }); return o.size;
+    }
+    const unit = metric==='amt'?'매출':(metric==='cnt'?'주문건수':'수량');
+    const fmt = v => metric==='amt'?won(v):(num(v)+(metric==='cnt'?'건':'개'));
+    const fmtShort = v => metric==='amt'?wonShort(v):num(v);
+    let top=1;
+    for(let m=1;m<=12;m++){ top=Math.max(top, monthVal(yearA,m), monthVal(yearB,m)); }
+    const leg=document.getElementById('sa-yearlegend');
+    if(leg) leg.innerHTML=
+      '<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:11px;height:11px;border-radius:2px;background:#cbd5e1;display:inline-block;"></span>'+yearB+'년</span>'
+      +'<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:11px;height:11px;border-radius:2px;background:#1F4E78;display:inline-block;"></span>'+yearA+'년</span>'
+      +'<span style="color:var(--text-mute,#94a3b8);">· '+unit+' 기준</span>';
+    let html='';
+    for(let m=1;m<=12;m++){
+      const vA=monthVal(yearA,m), vB=monthVal(yearB,m);
+      const hA=Math.max(vA/top*100,0.5), hB=Math.max(vB/top*100,0.5);
+      let dtxt='';
+      if(vB>0){ const d=(vA-vB)/vB*100, up=d>=0; dtxt=(up?'▲':'▼')+Math.abs(d).toFixed(0)+'%'; }
+      const tip=m+'월 · '+yearB+': '+fmt(vB)+' / '+yearA+': '+fmt(vA)+(dtxt?(' ('+dtxt+')'):'');
+      html+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;" title="'+esc(tip)+'">'
+        +'<div style="width:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px;height:120px;">'
+          +'<div style="width:42%;background:#cbd5e1;height:'+hB+'%;border-radius:3px 3px 0 0;min-height:2px;"></div>'
+          +'<div style="width:42%;background:linear-gradient(180deg,#2c5f96,#1F4E78);height:'+hA+'%;border-radius:3px 3px 0 0;min-height:2px;"></div>'
+        +'</div>'
+        +'<div style="font-size:9px;color:var(--text-mute,#94a3b8);white-space:nowrap;">'+fmtShort(vA)+'</div>'
+        +'<div style="font-size:9.5px;color:var(--text-sub,#64748b);">'+m+'월</div>'
+        +'</div>';
+    }
+    box.innerHTML=html;
+  }
+
+  function renderAll(){ renderPeriod(); renderTrend(); renderYear(); renderCat(); }
 
   function fillDealers(){
     const sel=document.getElementById('sa-dealer'); if(!sel||sel.__filled) return;
     sel.innerHTML='<option value="all">전체 대리점</option>'+dealers.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
     sel.__filled=1;
+  }
+  function fillYears(){
+    const ys=new Set(); rows.forEach(r=>ys.add(Math.floor(r.ym/100)));
+    const years=[...ys].sort((a,b)=>b-a);
+    if(!years.length) return;
+    if(yearA==null){ yearA=years[0]; yearB=years[1]!=null?years[1]:years[0]; }
+    const selA=document.getElementById('sa-yA'), selB=document.getElementById('sa-yB');
+    if(selA){ selA.innerHTML=years.map(y=>'<option value="'+y+'">'+y+'년</option>').join(''); selA.value=String(yearA); }
+    if(selB){ selB.innerHTML=years.map(y=>'<option value="'+y+'">'+y+'년</option>').join(''); selB.value=String(yearB); }
   }
   function wire(){
     if(wired) return; wired=true;
@@ -5627,6 +5694,16 @@ const PageSales = (function(){
       else if(lv===1) drill.l2=null;
       renderCat();
     });
+    const yA=document.getElementById('sa-yA');
+    if(yA) yA.addEventListener('change',()=>{ yearA=+yA.value; renderYear(); });
+    const yB=document.getElementById('sa-yB');
+    if(yB) yB.addEventListener('change',()=>{ yearB=+yB.value; renderYear(); });
+    const ym=document.getElementById('sa-ymetric');
+    if(ym) ym.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+      ym.querySelectorAll('button').forEach(x=>{ x.classList.remove('on'); x.style.background='#fff'; x.style.color='var(--text-sub,#64748b)'; });
+      b.classList.add('on'); b.style.background='var(--primary,#1F4E78)'; b.style.color='#fff';
+      yearMetric=b.dataset.m; renderYear();
+    }));
   }
 
   async function init(){
@@ -5636,7 +5713,7 @@ const PageSales = (function(){
       rows=null; await load();
       if(!rows.length){ if(noData)noData.style.display=''; if(main)main.style.display='none'; return; }
       if(noData)noData.style.display='none'; if(main)main.style.display='';
-      fillDealers(); wire(); drill={l1:null,l2:null}; renderAll();
+      fillDealers(); fillYears(); wire(); drill={l1:null,l2:null}; renderAll();
     }catch(err){
       console.error('매출 분석 초기화 실패:',err);
       if(main){ main.style.display=''; }
