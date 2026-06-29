@@ -2189,6 +2189,27 @@ body {
         </div>
       </div>
     </div>
+    <div class="bh-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">👤 방문자 유형 <span class="hint">로그인 회원 vs 비회원(게스트) · 선택 기간</span></h3>
+        <div class="bh-seg" id="bh-vis-metric">
+          <button data-m="active_users" class="on">사용자수</button>
+          <button data-m="sessions">세션수</button>
+        </div>
+      </div>
+      <div id="bh-vis-summary" style="margin:14px 0 6px;"></div>
+      <div class="bh-grid" style="margin-top:14px;">
+        <div>
+          <div class="bh-modal-sub" style="margin-bottom:10px;">일자별 추이 <span style="font-weight:500;color:var(--text-mute);font-size:12px;">· 회원/비회원 방문</span></div>
+          <div id="bh-vis-trend" style="display:flex;align-items:flex-end;gap:5px;min-height:150px;"></div>
+        </div>
+        <div>
+          <div class="bh-modal-sub" style="margin-bottom:10px;">대리점별 회원 비중 <span style="font-weight:500;color:var(--text-mute);font-size:12px;">· 로그인 회원 비율 높은 순</span></div>
+          <div id="bh-vis-dealer"></div>
+        </div>
+      </div>
+      <div class="bh-note" style="margin-top:12px;">로그인 회원 비중이 높을수록 단골·충성 고객이 많다는 신호예요. 비회원(게스트)은 로그인 없이 둘러본 방문이에요.</div>
+    </div>
     <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
 
     <div id="bh-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;align-items:center;justify-content:center;padding:20px;">
@@ -2231,12 +2252,13 @@ const PAGE_META = {
 // 고객행동분석 (admin/staff 전용 · GA4 ga_daily_metrics 커스텀 대시보드)
 const PageBehavior = (function(){
   let loaded=false, gaRows=[], hostToDealer={}, dealerNames=[], maxDate=null, chart=null;
-  let pageRows=[], itemRows=[], searchRows=[];
+  let pageRows=[], itemRows=[], searchRows=[], visitorRows=[];
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
   let curItemMall='all';
   let curCartMall='all';
+  let visMetric='active_users';
   let detailChart=null, modalWired=false;
   let dealerFirst=null, dealerChart=null;
   const METRIC_META={
@@ -2271,6 +2293,10 @@ const PageBehavior = (function(){
         const sr = await sb.from('ga_search_daily').select('*');
         searchRows = sr.error ? [] : (sr.data||[]);
       }catch(e){ searchRows=[]; }
+      try{
+        const vr = await sb.from('ga_visitor_daily').select('*');
+        visitorRows = vr.error ? [] : (vr.data||[]);
+      }catch(e){ visitorRows=[]; }
       try{
         const df = await sb.from('dealer_first_order').select('*');
         dealerFirst = df.error ? [] : (df.data||[]);
@@ -2660,9 +2686,87 @@ const PageBehavior = (function(){
     searchBars(document.getElementById('bh-search-count'), byCount, 'cnt');
     searchBars(document.getElementById('bh-search-users'), byUsers, 'usr');
   }
+  function visitorFilteredRows(){
+    const cs=cutDateStr(); let rows=visitorRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMall);
+    return rows;
+  }
+  function renderVisitor(){
+    const mk=visMetric; // active_users | sessions
+    const rows=visitorFilteredRows();
+    const M_COL='#1F4E78', G_COL='#94a3b8';
+    // 요약 (회원/비회원 합계 + 비율 막대)
+    let mem=0, gst=0;
+    rows.forEach(r=>{ const v=+r[mk]||0; if(r.visitor_type==='member') mem+=v; else if(r.visitor_type==='guest') gst+=v; });
+    const tot=mem+gst;
+    const sumBox=document.getElementById('bh-vis-summary');
+    if(sumBox){
+      if(!tot){ sumBox.innerHTML='<div style="color:var(--text-mute);font-size:13px;padding:8px 0;">선택 기간에 방문자 데이터가 없어요. (수집 시작: 2026-06-25경)</div>'; }
+      else{
+        const mp=mem/tot*100, gp=gst/tot*100;
+        const unit=mk==='active_users'?'명':'세션';
+        sumBox.innerHTML=
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">'
+            +'<span style="font-size:13px;color:var(--text);"><b style="color:'+M_COL+';">회원 '+mp.toFixed(1)+'%</b> · 비회원 '+gp.toFixed(1)+'%</span>'
+            +'<span style="font-size:12px;color:var(--text-sub);">회원 '+num(mem)+unit+' / 비회원 '+num(gst)+unit+' (총 '+num(tot)+unit+')</span>'
+          +'</div>'
+          +'<div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--bg-soft);">'
+            +'<div style="width:'+mp+'%;background:'+M_COL+';"></div>'
+            +'<div style="width:'+gp+'%;background:'+G_COL+';"></div>'
+          +'</div>';
+      }
+    }
+    // 일자별 추이 (회원/비회원 누적 막대)
+    const trendBox=document.getElementById('bh-vis-trend');
+    if(trendBox){
+      const byDate={};
+      rows.forEach(r=>{ const d=r.date; if(!byDate[d])byDate[d]={m:0,g:0}; const v=+r[mk]||0; if(r.visitor_type==='member')byDate[d].m+=v; else if(r.visitor_type==='guest')byDate[d].g+=v; });
+      const dates=Object.keys(byDate).sort();
+      if(!dates.length){ trendBox.innerHTML='<div style="color:var(--text-mute);font-size:12.5px;padding:14px;">데이터 없음</div>'; }
+      else{
+        const top=Math.max.apply(null,dates.map(d=>byDate[d].m+byDate[d].g).concat([1]));
+        trendBox.innerHTML=dates.map(d=>{
+          const o=byDate[d], t=o.m+o.g, hm=o.m/top*100, hg=o.g/top*100;
+          const mmdd=d.slice(5);
+          return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;" title="'+d+' · 회원 '+num(o.m)+' / 비회원 '+num(o.g)+'">'
+            +'<div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:118px;">'
+              +'<div style="width:100%;background:'+G_COL+';height:'+hg+'%;border-radius:3px 3px 0 0;min-height:'+(o.g>0?2:0)+'px;"></div>'
+              +'<div style="width:100%;background:'+M_COL+';height:'+hm+'%;min-height:'+(o.m>0?2:0)+'px;"></div>'
+            +'</div>'
+            +'<div style="font-size:9px;color:var(--text-sub);transform:rotate(-30deg);white-space:nowrap;">'+mmdd+'</div>'
+          +'</div>';
+        }).join('');
+      }
+    }
+    // 대리점별 회원 비중 (회원비율 높은 순)
+    const dealerBox=document.getElementById('bh-vis-dealer');
+    if(dealerBox){
+      const byD={};
+      rows.forEach(r=>{ const nm=dealerOf(r.hostname); if(!byD[nm])byD[nm]={m:0,g:0}; const v=+r[mk]||0; if(r.visitor_type==='member')byD[nm].m+=v; else if(r.visitor_type==='guest')byD[nm].g+=v; });
+      let arr=Object.entries(byD).map(([nm,o])=>({nm,m:o.m,g:o.g,t:o.m+o.g})).filter(o=>o.t>0);
+      arr.forEach(o=>o.ratio=o.m/o.t*100);
+      arr.sort((a,b)=>b.ratio-a.ratio);
+      arr=arr.slice(0,15);
+      if(!arr.length){ dealerBox.innerHTML='<div style="color:var(--text-mute);font-size:12.5px;padding:14px;">데이터 없음</div>'; }
+      else{
+        dealerBox.innerHTML=arr.map(o=>(
+          '<div style="margin-bottom:9px;">'
+          +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">'
+            +'<span style="font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%;" title="'+esc(o.nm)+'">'+esc(o.nm)+'</span>'
+            +'<span style="font-size:12px;font-weight:700;color:'+M_COL+';">회원 '+o.ratio.toFixed(0)+'% <span style="color:var(--text-mute);font-weight:400;">('+num(o.t)+')</span></span>'
+          +'</div>'
+          +'<div style="display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--bg-soft);">'
+            +'<div style="width:'+o.ratio+'%;background:'+M_COL+';"></div>'
+            +'<div style="width:'+(100-o.ratio)+'%;background:'+G_COL+';"></div>'
+          +'</div></div>'
+        )).join('');
+      }
+    }
+  }
   function render(){
     const rows=filteredRows(), s=sum(rows);
-    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderItemConv(); renderSearch();
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderItemConv(); renderSearch(); renderVisitor();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
   }
   function buildControls(){
@@ -2686,6 +2790,8 @@ const PageBehavior = (function(){
       csel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       csel.addEventListener('change',()=>{ curCartMall=csel.value; renderCart(); });
     }
+    const vseg=document.getElementById('bh-vis-metric');
+    if(vseg && !vseg.__wired){ vseg.__wired=1; vseg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ vseg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); visMetric=b.dataset.m; renderVisitor(); })); }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
 
