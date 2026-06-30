@@ -2144,15 +2144,20 @@ body {
     </div>
     <div class="bh-grid">
       <div class="bh-panel">
-        <h3>🛒 상품 조회 TOP <span class="hint">많이 본 상품 (조회수 기준)</span></h3>
-        <div style="margin-bottom:11px;display:flex;align-items:center;gap:8px;">
+        <h3>🛒 상품 조회 TOP <span class="hint">많이 본 상품 (조회수 기준) · 회원/비회원 구분</span></h3>
+        <div style="margin-bottom:11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="bh-seg" id="bh-item-role">
+            <button data-r="all" class="on">전체</button>
+            <button data-r="member">회원</button>
+            <button data-r="guest">비회원</button>
+          </div>
           <span style="font-size:12px;color:var(--text-sub);">대리점</span>
           <select id="bh-item-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
         </div>
         <div id="bh-item-list"></div>
       </div>
       <div class="bh-panel">
-        <h3>🧺 장바구니 담은 상품 TOP <span class="hint">장바구니 담기 수량 기준</span></h3>
+        <h3>🧺 장바구니 담은 상품 TOP <span class="hint">담은 횟수 기준 (수량 아님)</span></h3>
         <div style="margin-bottom:11px;display:flex;align-items:center;gap:8px;">
           <span style="font-size:12px;color:var(--text-sub);">대리점</span>
           <select id="bh-cart-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
@@ -2253,10 +2258,12 @@ const PAGE_META = {
 const PageBehavior = (function(){
   let loaded=false, gaRows=[], hostToDealer={}, dealerNames=[], maxDate=null, chart=null;
   let pageRows=[], itemRows=[], searchRows=[], visitorRows=[];
+  let bqItemRows=[];
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
   let curItemMall='all';
+  let curItemRole='all';
   let curCartMall='all';
   let visMetric='active_users';
   let detailChart=null, modalWired=false;
@@ -2301,6 +2308,10 @@ const PageBehavior = (function(){
         const df = await sb.from('dealer_first_order').select('*');
         dealerFirst = df.error ? [] : (df.data||[]);
       }catch(e){ dealerFirst=[]; }
+      try{
+        const bi = await sb.from('ga_item_bq_daily').select('*');
+        bqItemRows = bi.error ? [] : (bi.data||[]);
+      }catch(e){ bqItemRows=[]; }
       hostToDealer={}; const nmeSet=new Set();
       (dl.data||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -2545,18 +2556,26 @@ const PageBehavior = (function(){
     return rows;
   }
   function itemRowsForPanel(){
-    const cs=cutDateStr(); let rows=itemRows;
+    const cs=cutDateStr(); let rows=bqItemRows;
     if(cs) rows=rows.filter(r=>r.date>=cs);
     if(curItemMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curItemMall);
     return rows;
+  }
+  function itemValOf(r){
+    if(curItemRole==='member') return (+r.member_views||0);
+    if(curItemRole==='guest')  return (+r.guest_views||0);
+    return (+r.member_views||0)+(+r.guest_views||0); // 전체
   }
   function renderItems(){
     const box=document.getElementById('bh-item-list'); if(!box) return;
     const rows=itemRowsForPanel();
     const byName={};
-    rows.forEach(r=>{ const n=r.item_name||'(미상)'; byName[n]=(byName[n]||0)+(+r.items_viewed||0); });
-    const arr=Object.entries(byName).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,15);
-    if(!arr.length){ box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);">데이터 없음</div>'; return; }
+    rows.forEach(r=>{ const n=r.item_name||'(미상)'; byName[n]=(byName[n]||0)+itemValOf(r); });
+    const arr=Object.entries(byName).map(([n,v])=>({n,v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,15);
+    if(!arr.length){
+      const lbl = curItemRole==='guest' ? '비회원' : (curItemRole==='member' ? '회원' : '');
+      box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">'+(lbl?lbl+' ':'')+'상품 조회 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(BigQuery 연동분 · 기간을 넓혀보세요)</span></div>'; return;
+    }
     const top=Math.max(arr[0].v,1);
     box.innerHTML=arr.map(it=>{ const w=Math.max(it.v/top*100,4);
       return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">
@@ -2569,7 +2588,7 @@ const PageBehavior = (function(){
     }).join('');
   }
   function cartRowsForPanel(){
-    const cs=cutDateStr(); let rows=itemRows;
+    const cs=cutDateStr(); let rows=bqItemRows;
     if(cs) rows=rows.filter(r=>r.date>=cs);
     if(curCartMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curCartMall);
     return rows;
@@ -2578,9 +2597,9 @@ const PageBehavior = (function(){
     const box=document.getElementById('bh-cart-list'); if(!box) return;
     const rows=cartRowsForPanel();
     const byName={};
-    rows.forEach(r=>{ const n=r.item_name||'(미상)'; byName[n]=(byName[n]||0)+(+r.items_added_to_cart||0); });
+    rows.forEach(r=>{ const n=r.item_name||'(미상)'; byName[n]=(byName[n]||0)+(+r.cart_events||0); });
     const arr=Object.entries(byName).map(([n,v])=>({n,v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,15);
-    if(!arr.length){ box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">장바구니 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(2026-06-25부터 수집 시작 · 기간을 넓혀보세요)</span></div>'; return; }
+    if(!arr.length){ box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">장바구니 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(BigQuery 연동분 · 기간을 넓혀보세요)</span></div>'; return; }
     const top=Math.max(arr[0].v,1);
     box.innerHTML=arr.map(it=>{ const w=Math.max(it.v/top*100,4);
       return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">
@@ -2784,6 +2803,8 @@ const PageBehavior = (function(){
       isel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       isel.addEventListener('change',()=>{ curItemMall=isel.value; renderItems(); });
     }
+    const irole=document.getElementById('bh-item-role');
+    if(irole && !irole.__wired){ irole.__wired=1; irole.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ irole.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curItemRole=b.dataset.r; renderItems(); })); }
     const csel=document.getElementById('bh-cart-mall');
     if(csel && !csel.__wired){ csel.__wired=1;
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
