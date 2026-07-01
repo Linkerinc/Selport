@@ -2167,7 +2167,7 @@ body {
     </div>
     <div class="bh-panel">
       <h3>🎯 상품별 구매 전환율
-        <span class="hint" style="margin-right:10px;">구매수 ÷ 조회수 · 높을수록 잘 팔리는 상품</span>
+        <span class="hint" style="margin-right:10px;">구매 횟수 ÷ 조회 횟수 · 높을수록 잘 팔리는 상품</span>
       </h3>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
         <span style="font-size:12px;color:var(--text-sub);">조회수 필터</span>
@@ -2183,6 +2183,10 @@ body {
     </div>
     <div class="bh-panel">
       <h3>🔎 인기 검색어 <span class="hint">사이트 내 검색 기준 · 선택 기간 · 신규 고객의 관심 키워드</span></h3>
+      <div style="margin:2px 0 12px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:12px;color:var(--text-sub);">대리점</span>
+        <select id="bh-search-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+      </div>
       <div class="bh-grid" style="margin-top:4px;">
         <div>
           <div class="bh-modal-sub" style="margin-bottom:10px;">검색수 TOP <span style="font-weight:500;color:var(--text-mute);font-size:12px;">· 가장 많이 검색된 키워드 (반복 포함)</span></div>
@@ -2265,6 +2269,7 @@ const PageBehavior = (function(){
   let curItemMall='all';
   let curItemRole='all';
   let curCartMall='all';
+  let curSearchMall='all';
   let visMetric='active_users';
   let detailChart=null, modalWired=false;
   let dealerFirst=null, dealerChart=null;
@@ -2611,14 +2616,20 @@ const PageBehavior = (function(){
       </div>`;
     }).join('');
   }
+  function bqItemFilteredRows(){
+    const cs=cutDateStr(); let rows=bqItemRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMall);
+    return rows;
+  }
   function renderItemConv(){
     const body=document.getElementById('bh-itemconv-body'); if(!body) return;
-    const rows=itemFilteredRows();
+    const rows=bqItemFilteredRows();
     const byName={};
-    rows.forEach(r=>{ const n=r.item_name||'(미상)'; if(!byName[n])byName[n]={v:0,p:0}; byName[n].v+=(+r.items_viewed||0); byName[n].p+=(+r.items_purchased||0); });
+    rows.forEach(r=>{ const n=r.item_name||'(미상)'; if(!byName[n])byName[n]={v:0,p:0}; byName[n].v+=(+r.member_views||0)+(+r.guest_views||0); byName[n].p+=(+r.purchase_events||0); });
     let arr=Object.entries(byName).map(([n,o])=>({n,v:o.v,p:o.p,conv:o.v>0?o.p/o.v*100:0}));
     arr=arr.filter(o=>o.v>=curMinView).sort((a,b)=>b.conv-a.conv).slice(0,25);
-    if(!arr.length){ body.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-mute);">조건에 맞는 상품이 없어요 (필터를 낮춰보세요)</td></tr>'; return; }
+    if(!arr.length){ body.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-mute);">조건에 맞는 상품이 없어요 (필터를 낮추거나 데이터가 더 쌓이길 기다려보세요)</td></tr>'; return; }
     body.innerHTML=arr.map((o,i)=>{
       const c=o.conv, col = c>=20?'#16a34a' : c>=8?'#1F4E78' : 'var(--text-sub)';
       return `<tr><td class="num" style="color:var(--text-mute);">${i+1}</td><td><div style="max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(o.n)}">${esc(o.n)}</div></td><td class="num">${num(o.v)}</td><td class="num">${num(o.p)}</td><td class="num" style="font-weight:700;color:${col};">${c.toFixed(1)}%</td></tr>`;
@@ -2676,7 +2687,7 @@ const PageBehavior = (function(){
   function searchFilteredRows(){
     const cs=cutDateStr();
     let rows = cs ? searchRows.filter(r=>r.date>=cs) : searchRows;
-    if(curMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMall);
+    if(curSearchMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curSearchMall);
     return rows;
   }
   function searchBars(box, arr, valKey, label){
@@ -2813,6 +2824,12 @@ const PageBehavior = (function(){
     }
     const vseg=document.getElementById('bh-vis-metric');
     if(vseg && !vseg.__wired){ vseg.__wired=1; vseg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ vseg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); visMetric=b.dataset.m; renderVisitor(); })); }
+    const ssel=document.getElementById('bh-search-mall');
+    if(ssel && !ssel.__wired){ ssel.__wired=1;
+      const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
+      ssel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      ssel.addEventListener('change',()=>{ curSearchMall=ssel.value; renderSearch(); });
+    }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
 
