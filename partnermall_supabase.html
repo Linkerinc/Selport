@@ -2243,6 +2243,15 @@ body {
       </div>
       <div class="bh-note" style="margin-top:12px;">로그인 회원 비중이 높을수록 단골·충성 고객이 많다는 신호예요. 비회원(게스트)은 로그인 없이 둘러본 방문이에요.</div>
     </div>
+    <div class="bh-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">📖 페이지 완독률 <span class="hint">페이지를 끝까지(90% 스크롤) 본 비율 · 조회 많은 페이지 순</span></h3>
+        <select id="bh-scroll-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+      </div>
+      <div id="bh-scroll-list" style="margin-top:14px;"></div>
+      <div class="bh-note" style="margin-top:12px;">완독률 = 그 페이지를 본 사람 중 <b>90%까지 스크롤</b>해 사실상 끝까지 읽은 비율이에요. 높을수록 콘텐츠가 끝까지 읽힌다는 뜻이고, 조회는 많은데 완독률이 낮으면 <b>윗부분만 보고 이탈</b>하는 페이지예요. (조회수가 너무 적은 페이지는 비율이 튈 수 있어 30회 이상만 표시)</div>
+    </div>
+
     <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
 
     <div id="bh-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;align-items:center;justify-content:center;padding:20px;">
@@ -2289,6 +2298,7 @@ const PageBehavior = (function(){
   let bqItemRows=[];
   let catRows=[];
   let itemCatRows=[];
+  let scrollRows=[];
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
@@ -2296,6 +2306,7 @@ const PageBehavior = (function(){
   let curItemRole='all';
   let curCartMall='all';
   let curSearchMall='all';
+  let curScrollMall='all';
   let curCatRole='all';
   let visMetric='active_users';
   let detailChart=null, modalWired=false;
@@ -2352,6 +2363,10 @@ const PageBehavior = (function(){
         const ic = await sb.from('ga_item_cat_daily').select('*');
         itemCatRows = ic.error ? [] : (ic.data||[]);
       }catch(e){ itemCatRows=[]; }
+      try{
+        const scr = await sb.from('ga_scroll_daily').select('*');
+        scrollRows = scr.error ? [] : (scr.data||[]);
+      }catch(e){ scrollRows=[]; }
       hostToDealer={}; const nmeSet=new Set();
       (dl.data||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -2920,8 +2935,42 @@ const PageBehavior = (function(){
   }
   function render(){
     const rows=filteredRows(), s=sum(rows);
-    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor();
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor(); renderScroll();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
+  }
+  function scrollFilteredRows(){
+    const cs=cutDateStr(); let rows=scrollRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curScrollMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curScrollMall);
+    return rows;
+  }
+  function renderScroll(){
+    const box=document.getElementById('bh-scroll-list'); if(!box) return;
+    const rows=scrollFilteredRows();
+    if(!rows.length){
+      box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">완독률 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(BigQuery 연동분 · 기간을 넓혀보세요)</span></div>'; return;
+    }
+    const byTitle={};
+    rows.forEach(r=>{ const t=r.page_title||'(제목 없음)'; if(!byTitle[t]) byTitle[t]={views:0,scr:0}; byTitle[t].views+=(+r.page_views||0); byTitle[t].scr+=(+r.scroll_90||0); });
+    const arr=Object.entries(byTitle)
+      .map(([t,o])=>({t,views:o.views,scr:o.scr,rate:o.views>0?Math.min(o.scr/o.views*100,100):0}))
+      .filter(o=>o.views>=30)
+      .sort((a,b)=>b.views-a.views).slice(0,15);
+    if(!arr.length){
+      box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">조회 30회 이상인 페이지가 아직 없어요.<br><span style="font-size:11.5px;">(기간을 넓혀보세요)</span></div>'; return;
+    }
+    box.innerHTML=arr.map(p=>{ const label=p.t.split(' | ')[0]||p.t; const w=Math.max(p.rate,3);
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(p.t)}">${esc(label)} <span style="color:var(--text-mute);font-size:11px;">· 조회 ${num(p.views)}</span></div>
+          <div style="height:8px;background:var(--bg-soft);border-radius:4px;margin-top:5px;"><div style="height:100%;width:${w}%;background:linear-gradient(90deg,#2c5f96,#1F4E78);border-radius:4px;"></div></div>
+        </div>
+        <div style="flex:0 0 auto;text-align:right;">
+          <div style="font-size:13.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${p.rate.toFixed(1)}%</div>
+          <div style="font-size:10.5px;color:var(--text-mute);font-variant-numeric:tabular-nums;">${num(p.scr)}/${num(p.views)}</div>
+        </div>
+      </div>`;
+    }).join('');
   }
   function buildControls(){
     const sel=document.getElementById('bh-mall');
@@ -2960,6 +3009,12 @@ const PageBehavior = (function(){
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
       ssel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       ssel.addEventListener('change',()=>{ curSearchMall=ssel.value; renderSearch(); });
+    }
+    const scsel=document.getElementById('bh-scroll-mall');
+    if(scsel && !scsel.__wired){ scsel.__wired=1;
+      const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
+      scsel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      scsel.addEventListener('change',()=>{ curScrollMall=scsel.value; renderScroll(); });
     }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
