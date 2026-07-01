@@ -2249,7 +2249,7 @@ body {
         <select id="bh-scroll-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
       </div>
       <div id="bh-scroll-list" style="margin-top:14px;"></div>
-      <div class="bh-note" style="margin-top:12px;">완독률 = 그 페이지를 본 사람 중 <b>90%까지 스크롤</b>해 사실상 끝까지 읽은 비율이에요. 높을수록 콘텐츠가 끝까지 읽힌다는 뜻이고, 조회는 많은데 완독률이 낮으면 <b>윗부분만 보고 이탈</b>하는 페이지예요. (조회수가 너무 적은 페이지는 비율이 튈 수 있어 30회 이상만 표시)</div>
+      <div class="bh-note" style="margin-top:12px;">완독률 = 그 페이지를 본 사람 중 <b>90%까지 스크롤</b>해 사실상 끝까지 본 비율이에요. 조회는 많은데 완독률이 낮으면 <b>윗부분만 보고 이탈</b>하는 페이지예요(예: 회원가입 폼 완독률이 낮으면 가입 중 이탈). 장바구니·로그인 같은 <b>처리용 페이지는 제외</b>했고, 조회 30회 미만 페이지도 비율이 튀어 뺐어요.</div>
     </div>
 
     <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
@@ -2307,6 +2307,7 @@ const PageBehavior = (function(){
   let curCartMall='all';
   let curSearchMall='all';
   let curScrollMall='all';
+  let scrollArr=[];
   let curCatRole='all';
   let visMetric='active_users';
   let detailChart=null, modalWired=false;
@@ -2323,7 +2324,24 @@ const PageBehavior = (function(){
   const num=n=>Math.round(n||0).toLocaleString('ko-KR');
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function secToStr(s){ s=Math.round(s||0); if(s>=60){ const m=Math.floor(s/60); return m+'분 '+(s%60)+'초'; } return s+'초'; }
-  const PATH_NAMES={'/':'메인 홈','/content/product/list':'상품 목록','/content/product/view':'상품 상세','/shop/cart.php':'장바구니','/bbs/board.php':'게시판','/shop/orderform.php':'주문서','/member/login.php':'로그인','/member/login_form.php':'로그인','/shop/mypage.php':'마이페이지'};
+  const PATH_NAMES={'/':'메인 홈','/content/product/list':'상품 목록','/content/product/view':'상품 상세','/shop/cart.php':'장바구니','/bbs/board.php':'게시판','/shop/orderform.php':'주문서','/member/login.php':'로그인','/member/login_form.php':'로그인','/shop/mypage.php':'마이페이지','/content/mypage/order':'마이페이지 · 주문내역','/content/mypage/info':'마이페이지 · 회원정보','/content/mypage/reserve':'마이페이지 · 예약','/content/member/join':'회원가입','/content/board/pointmall':'포인트몰','/shop/couponzone.php':'쿠폰존','/bbs/login.php':'로그인','/bbs/login_check.php':'로그인 처리','/shop/cartupdate.php':'장바구니 담기(처리)','/shop/':'메인 홈'};
+  const SCROLL_SKIP=['/shop/cartupdate.php','/bbs/login_check.php','/shop/cart.php','/bbs/login.php','/member/login.php','/member/login_form.php'];
+  const BOARD_NAMES={new_goods:'신제품 게시판',exhibition:'기획전(전시·이벤트)',qa:'Q&A 게시판',notice:'공지사항',faq:'자주 묻는 질문',review:'상품 후기',event:'이벤트 게시판'};
+  function scrollGroup(key){
+    const s=String(key), base=s.split('?')[0];
+    if(base==='/content/product/view') return {g:'product_view', label:'상품 상세페이지', agg:true};
+    if(base==='/content/product/list'){
+      if(/search_txt=/.test(s)) return {g:'product_search', label:'상품 검색결과', agg:true};
+      return {g:'product_list', label:'상품 목록(카테고리)', agg:true};
+    }
+    if(base==='/bbs/board.php'){
+      const m=s.match(/bo_table=([^&]+)/); const t=m?decodeURIComponent(m[1]):'';
+      return {g:'board_'+t, label:BOARD_NAMES[t]||('게시판'+(t?' · '+t:'')), agg:true};
+    }
+    if(base==='/' || base==='/shop/' || base==='/index.php') return {g:'home', label:'메인 홈', agg:true};
+    const pn=PATH_NAMES[base];
+    return {g:base, label:pn||base, agg:false};
+  }
   function normHost(h){ return String(h||'').replace(/^www\./,'').toLowerCase(); }
 
   async function loadData(){
@@ -2950,27 +2968,88 @@ const PageBehavior = (function(){
     if(!rows.length){
       box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">완독률 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(BigQuery 연동분 · 기간을 넓혀보세요)</span></div>'; return;
     }
-    const byTitle={};
-    rows.forEach(r=>{ const t=r.page_title||'(제목 없음)'; if(!byTitle[t]) byTitle[t]={views:0,scr:0}; byTitle[t].views+=(+r.page_views||0); byTitle[t].scr+=(+r.scroll_90||0); });
-    const arr=Object.entries(byTitle)
-      .map(([t,o])=>({t,views:o.views,scr:o.scr,rate:o.views>0?Math.min(o.scr/o.views*100,100):0}))
+    const byKey={};
+    const byG={};
+    rows.forEach(r=>{ const k=r.page_path||r.page_title||'(미상)'; const base=String(k).split('?')[0];
+      if(SCROLL_SKIP.indexOf(base)>=0) return;
+      const gp=scrollGroup(k);
+      if(!byG[gp.g]) byG[gp.g]={g:gp.g,label:gp.label,agg:gp.agg,views:0,scr:0,pages:new Set()};
+      const o=byG[gp.g]; o.views+=(+r.page_views||0); o.scr+=(+r.scroll_90||0); o.pages.add(k); });
+    const arr=Object.values(byG)
+      .map(o=>({g:o.g,label:o.label,agg:o.agg,pages:o.pages.size,views:o.views,scr:o.scr,rate:o.views>0?Math.min(o.scr/o.views*100,100):0}))
       .filter(o=>o.views>=30)
       .sort((a,b)=>b.views-a.views).slice(0,15);
     if(!arr.length){
       box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">조회 30회 이상인 페이지가 아직 없어요.<br><span style="font-size:11.5px;">(기간을 넓혀보세요)</span></div>'; return;
     }
-    box.innerHTML=arr.map(p=>{ const label=p.t.split(' | ')[0]||p.t; const w=Math.max(p.rate,3);
-      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;">
+    scrollArr=arr;
+    box.innerHTML=arr.map((p,i)=>{
+      const w=Math.max(p.rate,3);
+      const sub = (p.agg && p.pages>1) ? (p.pages+'개 페이지 합산') : '';
+      return `<div class="bh-scroll-item" data-idx="${i}" style="display:flex;align-items:center;gap:10px;margin-bottom:11px;cursor:pointer;">
+        <span class="bh-scroll-caret" style="flex:0 0 auto;color:var(--text-mute);font-size:10px;width:10px;">▸</span>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(p.t)}">${esc(label)} <span style="color:var(--text-mute);font-size:11px;">· 조회 ${num(p.views)}</span></div>
+          <div style="font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.label)} <span style="color:var(--text-mute);font-size:11px;">· 조회 ${num(p.views)}</span></div>
+          ${sub?`<div style="font-size:10.5px;color:var(--text-mute);">${sub}</div>`:''}
           <div style="height:8px;background:var(--bg-soft);border-radius:4px;margin-top:5px;"><div style="height:100%;width:${w}%;background:linear-gradient(90deg,#2c5f96,#1F4E78);border-radius:4px;"></div></div>
         </div>
         <div style="flex:0 0 auto;text-align:right;">
           <div style="font-size:13.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${p.rate.toFixed(1)}%</div>
           <div style="font-size:10.5px;color:var(--text-mute);font-variant-numeric:tabular-nums;">${num(p.scr)}/${num(p.views)}</div>
         </div>
-      </div>`;
+      </div>
+      <div class="bh-scroll-detail" data-idx="${i}" style="display:none;background:var(--bg-soft);border-radius:8px;padding:0;margin:-4px 0 11px;"><div class="bh-scroll-detail-inner" style="padding:14px 16px;"></div></div>`;
     }).join('');
+    box.querySelectorAll('.bh-scroll-item').forEach(el=>{ el.onclick=()=>toggleScrollDetail(+el.dataset.idx, el); });
+  }
+  function toggleScrollDetail(idx, rowEl){
+    const box=document.getElementById('bh-scroll-list'); if(!box) return;
+    const detail=box.querySelector('.bh-scroll-detail[data-idx="'+idx+'"]'); if(!detail) return;
+    const caret=rowEl.querySelector('.bh-scroll-caret');
+    const open = detail.style.display==='none';
+    detail.style.display = open ? 'block' : 'none';
+    if(caret) caret.textContent = open ? '▾' : '▸';
+    if(open && !detail.dataset.rendered){
+      detail.dataset.rendered='1';
+      renderScrollDetail(scrollArr[idx], detail.querySelector('.bh-scroll-detail-inner'));
+    }
+  }
+  function renderScrollDetail(item, el){
+    if(!el) return;
+    const g=item.g;
+    const rows=scrollFilteredRows().filter(r=>{ const k=r.page_path||r.page_title||'(미상)'; const base=String(k).split('?')[0]; return SCROLL_SKIP.indexOf(base)<0 && scrollGroup(k).g===g; });
+    // 일자별 완독률
+    const byDate={}; rows.forEach(r=>{ const d=r.date; if(!byDate[d])byDate[d]={v:0,s:0}; byDate[d].v+=(+r.page_views||0); byDate[d].s+=(+r.scroll_90||0); });
+    const dates=Object.keys(byDate).sort();
+    const rateOf=o=>o.v>0?Math.min(o.s/o.v*100,100):0;
+    const maxRate=Math.max.apply(null, dates.map(d=>rateOf(byDate[d])).concat([1]));
+    const spark=dates.map(d=>{ const rt=rateOf(byDate[d]);
+      return `<div title="${d}: ${rt.toFixed(1)}% (${num(byDate[d].s)}/${num(byDate[d].v)})" style="flex:1;min-width:3px;display:flex;align-items:flex-end;"><div style="width:100%;height:${Math.max(rt/maxRate*44,2)}px;background:#1F4E78;border-radius:2px 2px 0 0;"></div></div>`;
+    }).join('');
+    // 개별 페이지 TOP (묶인 그룹만 · 어느 상품/게시글인지)
+    let pagesHtml='';
+    if(item.agg){
+      const byPath={}; rows.forEach(r=>{ const p=r.page_path||'(미상)'; if(!byPath[p])byPath[p]={v:0,s:0}; byPath[p].v+=(+r.page_views||0); byPath[p].s+=(+r.scroll_90||0); });
+      const parr=Object.entries(byPath).map(([p,o])=>({p,v:o.v,s:o.s,rate:o.v>0?Math.min(o.s/o.v*100,100):0})).sort((a,b)=>b.v-a.v).slice(0,10);
+      pagesHtml=`
+        <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">개별 페이지 TOP <span style="font-weight:500;color:var(--text-mute);">· 이 종류 안에서 조회 많은 실제 주소</span></div>
+        <div style="overflow-x:auto;margin-bottom:18px;"><table class="bh-malltbl">
+          <thead><tr><th>페이지 주소</th><th class="num">조회수</th><th class="num">완독</th><th class="num">완독률</th></tr></thead>
+          <tbody>${parr.map(d=>`<tr><td style="font-family:monospace;font-size:11px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(d.p)}">${esc(d.p)}</td><td class="num">${num(d.v)}</td><td class="num">${num(d.s)}</td><td class="num">${d.rate.toFixed(1)}%</td></tr>`).join('')}</tbody>
+        </table></div>`;
+    }
+    // 대리점(몰)별 완독률
+    const byDealer={}; rows.forEach(r=>{ const dn=dealerOf(r.hostname); if(!byDealer[dn])byDealer[dn]={dealer:dn,v:0,s:0}; byDealer[dn].v+=(+r.page_views||0); byDealer[dn].s+=(+r.scroll_90||0); });
+    const darr=Object.values(byDealer).map(o=>({...o,rate:o.v>0?Math.min(o.s/o.v*100,100):0})).sort((a,b)=>b.v-a.v);
+    el.innerHTML=`
+      <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">일자별 완독률 <span style="font-weight:500;color:var(--text-mute);">· 막대에 마우스 올리면 날짜·수치</span></div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:48px;margin-bottom:18px;">${spark||'<span style="font-size:12px;color:var(--text-mute);">데이터 없음</span>'}</div>
+      ${pagesHtml}
+      <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">대리점(몰)별 완독률 <span style="font-weight:500;color:var(--text-mute);">· 조회 많은 순</span></div>
+      <div style="overflow-x:auto;"><table class="bh-malltbl">
+        <thead><tr><th>대리점 (몰)</th><th class="num">조회수</th><th class="num">완독(90%)</th><th class="num">완독률</th></tr></thead>
+        <tbody>${darr.map(d=>`<tr><td>${esc(d.dealer)}</td><td class="num">${num(d.v)}</td><td class="num">${num(d.s)}</td><td class="num">${d.rate.toFixed(1)}%</td></tr>`).join('')}</tbody>
+      </table></div>`;
   }
   function buildControls(){
     const sel=document.getElementById('bh-mall');
