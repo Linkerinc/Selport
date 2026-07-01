@@ -2166,6 +2166,18 @@ body {
       </div>
     </div>
     <div class="bh-panel">
+      <h3>🔀 크로스셀링 <span class="hint">대리점별 카테고리 조회 · 주력과 다른 카테고리 발견</span></h3>
+      <div style="margin:2px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div class="bh-seg" id="bh-cat-role">
+          <button data-r="all" class="on">전체</button>
+          <button data-r="member">회원</button>
+          <button data-r="guest">비회원</button>
+        </div>
+        <span style="font-size:11.5px;color:var(--text-mute);">칸이 진할수록 그 대리점이 (자기 기준으로) 많이 본 카테고리예요</span>
+      </div>
+      <div id="bh-crosssell" style="overflow-x:auto;"></div>
+    </div>
+    <div class="bh-panel">
       <h3>🎯 상품별 구매 전환율
         <span class="hint" style="margin-right:10px;">구매 횟수 ÷ 조회 횟수 · 높을수록 잘 팔리는 상품</span>
       </h3>
@@ -2263,6 +2275,7 @@ const PageBehavior = (function(){
   let loaded=false, gaRows=[], hostToDealer={}, dealerNames=[], maxDate=null, chart=null;
   let pageRows=[], itemRows=[], searchRows=[], visitorRows=[];
   let bqItemRows=[];
+  let catRows=[];
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
@@ -2270,6 +2283,7 @@ const PageBehavior = (function(){
   let curItemRole='all';
   let curCartMall='all';
   let curSearchMall='all';
+  let curCatRole='all';
   let visMetric='active_users';
   let detailChart=null, modalWired=false;
   let dealerFirst=null, dealerChart=null;
@@ -2317,6 +2331,10 @@ const PageBehavior = (function(){
         const bi = await sb.from('ga_item_bq_daily').select('*');
         bqItemRows = bi.error ? [] : (bi.data||[]);
       }catch(e){ bqItemRows=[]; }
+      try{
+        const ct = await sb.from('ga_category_daily').select('*');
+        catRows = ct.error ? [] : (ct.data||[]);
+      }catch(e){ catRows=[]; }
       hostToDealer={}; const nmeSet=new Set();
       (dl.data||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -2616,6 +2634,51 @@ const PageBehavior = (function(){
       </div>`;
     }).join('');
   }
+  function catFilteredRows(){
+    const cs=cutDateStr(); let rows=catRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    return rows;
+  }
+  function catValOf(r){
+    if(curCatRole==='member') return (+r.member_views||0);
+    if(curCatRole==='guest')  return (+r.guest_views||0);
+    return (+r.member_views||0)+(+r.guest_views||0);
+  }
+  function renderCrosssell(){
+    const box=document.getElementById('bh-crosssell'); if(!box) return;
+    const rows=catFilteredRows();
+    const grid={}, catTotal={}, dealerTotal={};
+    rows.forEach(r=>{
+      const v=catValOf(r); if(v<=0) return;
+      const d=dealerOf(r.hostname); const c=r.cat_name||r.cat_code||'(미상)';
+      if(!grid[d])grid[d]={};
+      grid[d][c]=(grid[d][c]||0)+v;
+      catTotal[c]=(catTotal[c]||0)+v;
+      dealerTotal[d]=(dealerTotal[d]||0)+v;
+    });
+    const dealers=Object.keys(dealerTotal).sort((a,b)=>dealerTotal[b]-dealerTotal[a]).slice(0,15);
+    const cats=Object.keys(catTotal).sort((a,b)=>catTotal[b]-catTotal[a]).slice(0,10);
+    if(!dealers.length||!cats.length){
+      const lbl=curCatRole==='guest'?'비회원 ':(curCatRole==='member'?'회원 ':'');
+      box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">'+lbl+'카테고리 조회 데이터가 아직 없어요.</div>'; return;
+    }
+    let html='<table class="bh-malltbl" style="min-width:'+(150+cats.length*82)+'px;"><thead><tr><th style="text-align:left;white-space:nowrap;">대리점</th>';
+    cats.forEach(c=>{ html+='<th class="num" style="font-size:11px;white-space:nowrap;">'+esc(c)+'</th>'; });
+    html+='</tr></thead><tbody>';
+    dealers.forEach(d=>{
+      const rowMax=Math.max.apply(null,cats.map(c=>grid[d][c]||0).concat([1]));
+      html+='<tr><td style="white-space:nowrap;font-weight:500;">'+esc(d)+'</td>';
+      cats.forEach(c=>{
+        const v=grid[d][c]||0, ratio=v/rowMax;
+        const alpha=v>0?(0.10+ratio*0.80).toFixed(2):'0';
+        const txt=ratio>0.55?'#fff':'var(--text)';
+        html+='<td class="num" style="background:rgba(31,78,120,'+alpha+');color:'+txt+';font-variant-numeric:tabular-nums;">'+(v>0?num(v):'·')+'</td>';
+      });
+      html+='</tr>';
+    });
+    html+='</tbody></table>';
+    box.innerHTML=html;
+  }
   function bqItemFilteredRows(){
     const cs=cutDateStr(); let rows=bqItemRows;
     if(cs) rows=rows.filter(r=>r.date>=cs);
@@ -2796,7 +2859,7 @@ const PageBehavior = (function(){
   }
   function render(){
     const rows=filteredRows(), s=sum(rows);
-    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderItemConv(); renderSearch(); renderVisitor();
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
   }
   function buildControls(){
@@ -2816,6 +2879,8 @@ const PageBehavior = (function(){
     }
     const irole=document.getElementById('bh-item-role');
     if(irole && !irole.__wired){ irole.__wired=1; irole.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ irole.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curItemRole=b.dataset.r; renderItems(); })); }
+    const crole=document.getElementById('bh-cat-role');
+    if(crole && !crole.__wired){ crole.__wired=1; crole.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ crole.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curCatRole=b.dataset.r; renderCrosssell(); })); }
     const csel=document.getElementById('bh-cart-mall');
     if(csel && !csel.__wired){ csel.__wired=1;
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
