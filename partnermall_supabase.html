@@ -2173,9 +2173,21 @@ body {
           <button data-r="member">회원</button>
           <button data-r="guest">비회원</button>
         </div>
-        <span style="font-size:11.5px;color:var(--text-mute);">칸이 진할수록 그 대리점이 (자기 기준으로) 많이 본 카테고리예요</span>
+        <span style="font-size:11.5px;color:var(--text-mute);">칸이 진할수록 그 대리점이 (자기 기준으로) 많이 본 카테고리예요 · <b style="color:var(--text-sub);">숫자를 누르면 실제 상품이 보여요</b></span>
       </div>
       <div id="bh-crosssell" style="overflow-x:auto;"></div>
+    </div>
+    <div id="xsell-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(20,24,32,0.5);align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeCrosssellDrill()">
+      <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+          <div>
+            <div id="xsell-modal-title" style="font-size:15px;font-weight:600;color:var(--text);"></div>
+            <div id="xsell-modal-sub" style="font-size:11.5px;color:var(--text-mute);margin-top:3px;"></div>
+          </div>
+          <button onclick="closeCrosssellDrill()" style="border:none;background:var(--bg-soft,#f1f3f5);width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:16px;color:var(--text-sub);flex-shrink:0;">✕</button>
+        </div>
+        <div id="xsell-modal-body" style="padding:8px 20px 18px;overflow-y:auto;"></div>
+      </div>
     </div>
     <div class="bh-panel">
       <h3>🎯 상품별 구매 전환율
@@ -2276,6 +2288,7 @@ const PageBehavior = (function(){
   let pageRows=[], itemRows=[], searchRows=[], visitorRows=[];
   let bqItemRows=[];
   let catRows=[];
+  let itemCatRows=[];
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
@@ -2335,6 +2348,10 @@ const PageBehavior = (function(){
         const ct = await sb.from('ga_category_daily').select('*');
         catRows = ct.error ? [] : (ct.data||[]);
       }catch(e){ catRows=[]; }
+      try{
+        const ic = await sb.from('ga_item_cat_daily').select('*');
+        itemCatRows = ic.error ? [] : (ic.data||[]);
+      }catch(e){ itemCatRows=[]; }
       hostToDealer={}; const nmeSet=new Set();
       (dl.data||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -2634,6 +2651,7 @@ const PageBehavior = (function(){
       </div>`;
     }).join('');
   }
+  let catName2Code={};
   function catFilteredRows(){
     const cs=cutDateStr(); let rows=catRows;
     if(cs) rows=rows.filter(r=>r.date>=cs);
@@ -2647,10 +2665,11 @@ const PageBehavior = (function(){
   function renderCrosssell(){
     const box=document.getElementById('bh-crosssell'); if(!box) return;
     const rows=catFilteredRows();
-    const grid={}, catTotal={}, dealerTotal={};
+    const grid={}, catTotal={}, dealerTotal={}; catName2Code={};
     rows.forEach(r=>{
       const v=catValOf(r); if(v<=0) return;
       const d=dealerOf(r.hostname); const c=r.cat_name||r.cat_code||'(미상)';
+      if(r.cat_code) catName2Code[c]=r.cat_code;
       if(!grid[d])grid[d]={};
       grid[d][c]=(grid[d][c]||0)+v;
       catTotal[c]=(catTotal[c]||0)+v;
@@ -2672,13 +2691,55 @@ const PageBehavior = (function(){
         const v=grid[d][c]||0, ratio=v/rowMax;
         const alpha=v>0?(0.10+ratio*0.80).toFixed(2):'0';
         const txt=ratio>0.55?'#fff':'var(--text)';
-        html+='<td class="num" style="background:rgba(31,78,120,'+alpha+');color:'+txt+';font-variant-numeric:tabular-nums;">'+(v>0?num(v):'·')+'</td>';
+        const clk=v>0;
+        html+='<td class="num'+(clk?' xsell-cell':'')+'"'
+          +(clk?' data-dealer="'+esc(d)+'" data-cat="'+esc(c)+'" title="클릭 → '+esc(c)+' 상품 보기"':'')
+          +' style="background:rgba(31,78,120,'+alpha+');color:'+txt+';font-variant-numeric:tabular-nums;'+(clk?'cursor:pointer;':'')+'">'
+          +(v>0?num(v):'·')+'</td>';
       });
       html+='</tr>';
     });
     html+='</tbody></table>';
     box.innerHTML=html;
+    box.querySelectorAll('.xsell-cell').forEach(td=>{
+      td.addEventListener('click',()=>openCrosssellDrill(td.dataset.dealer, td.dataset.cat));
+    });
   }
+  function openCrosssellDrill(dealer, catName){
+    const code=catName2Code[catName]||'';
+    const cs=cutDateStr();
+    let rows=itemCatRows.filter(r=>dealerOf(r.hostname)===dealer);
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(code) rows=rows.filter(r=>r.cat_code===code);
+    const agg={};
+    rows.forEach(r=>{
+      const v=catValOf(r); if(v<=0) return;
+      const nm=r.item_name||'(상품명 없음)';
+      agg[nm]=(agg[nm]||0)+v;
+    });
+    const list=Object.keys(agg).map(nm=>({nm,v:agg[nm]})).sort((a,b)=>b.v-a.v).slice(0,50);
+    const roleLbl=curCatRole==='member'?'회원':(curCatRole==='guest'?'비회원':'전체');
+    let body='';
+    if(!list.length){
+      body='<div style="text-align:center;padding:28px;color:var(--text-mute);font-size:13px;">이 조건의 상품 조회 데이터가 아직 없어요.<br><span style="font-size:11.5px;">('+roleLbl+' 기준 · 데이터가 더 쌓이면 채워져요)</span></div>';
+    }else{
+      const mx=list[0].v||1;
+      body='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">상품명</th><th class="num">조회수</th></tr></thead><tbody>';
+      list.forEach(it=>{
+        const w=Math.max(3,Math.round(it.v/mx*100));
+        body+='<tr><td style="position:relative;">'
+          +'<div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div>'
+          +'<span style="position:relative;">'+esc(it.nm)+'</span></td>'
+          +'<td class="num" style="font-variant-numeric:tabular-nums;font-weight:500;">'+num(it.v)+'</td></tr>';
+      });
+      body+='</tbody></table>';
+    }
+    document.getElementById('xsell-modal-title').innerHTML=esc(dealer)+' <span style="color:var(--text-sub);font-weight:400;">·</span> '+esc(catName);
+    document.getElementById('xsell-modal-sub').textContent=roleLbl+' 조회 기준 · 이 대리점이 이 카테고리에서 본 상품 (TOP '+list.length+')';
+    document.getElementById('xsell-modal-body').innerHTML=body;
+    document.getElementById('xsell-modal').style.display='flex';
+  }
+  function closeCrosssellDrill(){ const m=document.getElementById('xsell-modal'); if(m) m.style.display='none'; }
   function bqItemFilteredRows(){
     const cs=cutDateStr(); let rows=bqItemRows;
     if(cs) rows=rows.filter(r=>r.date>=cs);
