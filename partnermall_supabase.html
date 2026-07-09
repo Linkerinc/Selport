@@ -2495,6 +2495,8 @@ const PageBehavior = (function(){
   }
 
   function dealerOf(host){ return hostToDealer[normHost(host)] || normHost(host); }
+  // dealers 테이블에 등록된 대리점만 화면에 노출 (미매핑 호스트는 집계 행에서 숨김)
+  function isShownDealer(name){ return dealerNames.indexOf(name)>=0; }
 
   function cutDateStr(){
     if(curDays<=0 || !maxDate) return null;
@@ -2594,13 +2596,13 @@ const PageBehavior = (function(){
     periodRows().forEach(r=>{ const dn=dealerOf(r.hostname); if(!byMall[dn])byMall[dn]={s:0,p:0,m:0}; byMall[dn].s+=(+r.sessions||0); byMall[dn].p+=(+r.purchases||0); byMall[dn].m+=(+r[meta.key]||0); });
     let marr;
     if(meta.ratio){
-      marr=Object.entries(byMall).map(([n,o])=>({n,val:o.s>0?o.p/o.s*100:0,ses:o.s})).sort((a,b)=>b.val-a.val);
+      marr=Object.entries(byMall).map(([n,o])=>({n,val:o.s>0?o.p/o.s*100:0,ses:o.s})).filter(d=>isShownDealer(d.n)).sort((a,b)=>b.val-a.val);
       document.getElementById('bh-detail-mcol').textContent='전환율';
       document.getElementById('bh-detail-mhead').textContent='세션수';
       document.getElementById('bh-detail-mlabel').textContent='· 전환율 순';
       document.getElementById('bh-detail-mbody').innerHTML = marr.map(d=>`<tr><td>${esc(d.n)}</td><td class="num">${d.val.toFixed(2)}%</td><td class="num">${num(d.ses)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--text-mute);">데이터 없음</td></tr>';
     } else {
-      marr=Object.entries(byMall).map(([n,o])=>({n,val:o.m})).sort((a,b)=>b.val-a.val);
+      marr=Object.entries(byMall).map(([n,o])=>({n,val:o.m})).filter(d=>isShownDealer(d.n)).sort((a,b)=>b.val-a.val);
       const tot=marr.reduce((a,d)=>a+d.val,0)||1;
       document.getElementById('bh-detail-mcol').textContent=meta.label;
       document.getElementById('bh-detail-mhead').textContent='비중';
@@ -2655,7 +2657,7 @@ const PageBehavior = (function(){
     const rows=periodRows();
     const byD={};
     rows.forEach(r=>{ const dn=dealerOf(r.hostname); if(!byD[dn]) byD[dn]={u:0,s:0,vi:0,bc:0,p:0}; const o=byD[dn]; o.u+=(+r.active_users||0);o.s+=(+r.sessions||0);o.vi+=(+r.view_item||0);o.bc+=(+r.begin_checkout||0);o.p+=(+r.purchases||0); });
-    const arr=Object.entries(byD).map(([n,o])=>({n,...o,conv:o.s>0?o.p/o.s*100:0})).sort((a,b)=>b.s-a.s);
+    const arr=Object.entries(byD).map(([n,o])=>({n,...o,conv:o.s>0?o.p/o.s*100:0})).filter(d=>isShownDealer(d.n)).sort((a,b)=>b.s-a.s);
     document.getElementById('bh-malltbl-body').innerHTML = arr.map(d=>
       `<tr><td>${d.n}</td><td class="num">${num(d.u)}</td><td class="num">${num(d.s)}</td><td class="num">${num(d.vi)}</td><td class="num">${num(d.bc)}</td><td class="num">${num(d.p)}</td><td class="num">${d.conv.toFixed(2)}%</td></tr>`
     ).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-mute);">데이터 없음</td></tr>';
@@ -2707,7 +2709,7 @@ const PageBehavior = (function(){
     const byHost={}; rows.forEach(r=>{ const h=r.hostname; if(!byHost[h])byHost[h]={views:0,users:0,engW:0}; byHost[h].views+=(+r.page_views||0); byHost[h].users+=(+r.active_users||0); byHost[h].engW+=(+r.avg_engagement_sec||0)*(+r.active_users||0); });
     const byDealer={};
     Object.entries(byHost).forEach(([h,o])=>{ const dn=dealerOf(h); if(!byDealer[dn])byDealer[dn]={dealer:dn,views:0,users:0,engW:0,bestHost:h,bestViews:-1}; const d=byDealer[dn]; d.views+=o.views; d.users+=o.users; d.engW+=o.engW; if(o.views>d.bestViews){d.bestViews=o.views; d.bestHost=h;} });
-    const darr=Object.values(byDealer).sort((a,b)=>b.views-a.views);
+    const darr=Object.values(byDealer).filter(d=>isShownDealer(d.dealer)).sort((a,b)=>b.views-a.views);
     el.innerHTML=`
       <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">일자별 조회수 <span style="font-weight:500;color:var(--text-mute);">· 막대에 마우스 올리면 날짜·수치</span></div>
       <div style="display:flex;align-items:flex-end;gap:2px;height:48px;margin-bottom:18px;">${spark||'<span style="font-size:12px;color:var(--text-mute);">데이터 없음</span>'}</div>
@@ -2805,7 +2807,7 @@ const PageBehavior = (function(){
       catTotal[c]=(catTotal[c]||0)+v;
       dealerTotal[d]=(dealerTotal[d]||0)+v;
     });
-    const dealers=Object.keys(dealerTotal).sort((a,b)=>dealerTotal[b]-dealerTotal[a]).slice(0,15);
+    const dealers=Object.keys(dealerTotal).filter(isShownDealer).sort((a,b)=>dealerTotal[b]-dealerTotal[a]).slice(0,15);
     const cats=Object.keys(catTotal).sort((a,b)=>catTotal[b]-catTotal[a]).slice(0,10);
     if(!dealers.length||!cats.length){
       const lbl=curCatRole==='guest'?'비회원 ':(curCatRole==='member'?'회원 ':'');
@@ -3070,7 +3072,7 @@ const PageBehavior = (function(){
     if(dealerBox){
       const byD={};
       rows.forEach(r=>{ const nm=dealerOf(r.hostname); if(!byD[nm])byD[nm]={m:0,g:0}; const v=+r[mk]||0; if(r.visitor_type==='member')byD[nm].m+=v; else if(r.visitor_type==='guest')byD[nm].g+=v; });
-      let arr=Object.entries(byD).map(([nm,o])=>({nm,m:o.m,g:o.g,t:o.m+o.g})).filter(o=>o.t>0);
+      let arr=Object.entries(byD).map(([nm,o])=>({nm,m:o.m,g:o.g,t:o.m+o.g})).filter(o=>o.t>0 && isShownDealer(o.nm));
       arr.forEach(o=>o.ratio=o.m/o.t*100);
       arr.sort((a,b)=>b.ratio-a.ratio);
       arr=arr.slice(0,15);
@@ -3179,7 +3181,7 @@ const PageBehavior = (function(){
     }
     // 대리점(몰)별 완독률
     const byDealer={}; rows.forEach(r=>{ const dn=dealerOf(r.hostname); if(!byDealer[dn])byDealer[dn]={dealer:dn,v:0,s:0}; byDealer[dn].v+=(+r.page_views||0); byDealer[dn].s+=(+r.scroll_90||0); });
-    const darr=Object.values(byDealer).map(o=>({...o,rate:o.v>0?Math.min(o.s/o.v*100,100):0})).sort((a,b)=>b.v-a.v);
+    const darr=Object.values(byDealer).map(o=>({...o,rate:o.v>0?Math.min(o.s/o.v*100,100):0})).filter(d=>isShownDealer(d.dealer)).sort((a,b)=>b.v-a.v);
     el.innerHTML=`
       <div class="bh-modal-sub" style="margin-bottom:8px;font-size:12px;">일자별 완독률 <span style="font-weight:500;color:var(--text-mute);">· 막대에 마우스 올리면 날짜·수치</span></div>
       <div style="display:flex;align-items:flex-end;gap:2px;height:48px;margin-bottom:18px;">${spark||'<span style="font-size:12px;color:var(--text-mute);">데이터 없음</span>'}</div>
