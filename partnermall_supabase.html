@@ -2254,11 +2254,47 @@ body {
 
     <div class="bh-panel">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <h3 style="margin:0;">🧭 회원가입 퍼널 <span class="hint">가입 안내 → 약관 → 정보입력 → 완료 · 어느 단계에서 이탈하나</span></h3>
-        <select id="bh-signup-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+        <h3 style="margin:0;">🧭 회원가입 퍼널 <span class="hint">안내 → 약관 → 정보입력 → 입력시작/제출 → 완료</span></h3>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="bh-seg" id="bh-signup-lv">
+            <button data-l="all" class="on">전체</button>
+            <button data-l="개인">개인</button>
+            <button data-l="기업">기업</button>
+          </div>
+          <select id="bh-signup-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+        </div>
       </div>
       <div id="bh-signup" style="margin-top:16px;"></div>
-      <div class="bh-note" style="margin-top:12px;">각 단계로 넘어간 <b>사용자 수</b>예요. 단계 사이 <b>이탈률</b>이 높은 곳이 병목이에요. 약관 단계는 <b>개인(lv=2)·기업(lv=3)</b>으로 나눠 표시하고, 정보입력·완료는 개인/기업이 합쳐져요(사이트가 그 단계엔 구분값을 안 보냄). B2B 특성상 신규 가입 표본이 얇으니, 광고·시간이 쌓이면 더 뚜렷해져요.</div>
+      <div class="bh-note" style="margin-top:12px;">각 단계로 넘어간 <b>사용자 수</b>예요. 단계 사이 <b>이탈률</b>이 높은 곳이 병목이에요. <b>입력 시작/제출</b> 단계로 "페이지엔 왔는데 입력도 안 한 사람"과 "입력하다 포기한 사람"이 구분돼요. 개인/기업 토글은 7/2 이후 데이터부터 정확해요(그 전엔 약관 단계만 구분값이 있었어요). B2B 특성상 표본이 얇으니 기간을 넓혀 보세요.</div>
+    </div>
+
+    <div class="bh-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">🖱 클릭 분석 <span class="hint">상단 탭 · 메인 배너 · 이벤트 참여 클릭 (7/6 수집 시작)</span></h3>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="bh-seg" id="bh-click-role">
+            <button data-r="all" class="on">전체</button>
+            <button data-r="member">회원</button>
+            <button data-r="guest">비회원</button>
+          </div>
+          <select id="bh-click-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+        </div>
+      </div>
+      <div class="bh-grid" style="margin-top:14px;">
+        <div>
+          <div class="bh-modal-sub" style="margin-bottom:10px;">📑 상단 탭 클릭 TOP <span style="font-weight:500;color:var(--text-mute);font-size:12px;">· 어느 메뉴를 많이 누르나</span></div>
+          <div id="bh-click-tabs"></div>
+        </div>
+        <div>
+          <div class="bh-modal-sub" style="margin-bottom:10px;">🖼 메인 배너/영역 클릭 TOP <span style="font-weight:500;color:var(--text-mute);font-size:12px;">· 어느 배너가 먹히나</span></div>
+          <div id="bh-click-banners"></div>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="bh-modal-sub" style="margin-bottom:10px;">🎰 이벤트/기획전 참여 <span style="font-weight:500;color:var(--text-mute);font-size:12px;">· 룰렛 돌리기 등 실제 참여 횟수</span></div>
+        <div id="bh-click-events"></div>
+      </div>
+      <div class="bh-note" style="margin-top:12px;">메인 화면에서 사용자가 실제로 <b>무엇을 누르는지</b>예요. 탭 클릭이 많은 메뉴가 관심사이고, 배너 클릭이 적으면 배너 교체 신호예요. 참여 수는 <b>실제 참여 성공</b> 기준(자격 없는 클릭 제외)이에요.</div>
     </div>
 
     <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
@@ -2309,6 +2345,9 @@ const PageBehavior = (function(){
   let itemCatRows=[];
   let scrollRows=[];
   let signupRows=[];
+  let clickRows=[];
+  let curClickMall='all', curClickRole='all';
+  let curSignupLv='all';
   let pageArr=[];
   let curMall='all', curDays=30;
   let curMinView=10;
@@ -2354,6 +2393,20 @@ const PageBehavior = (function(){
     return {g:base, label:pn||base, agg:false};
   }
   const SCAT_NAMES={'10':'개인안전보호구','20':'연마제품','30':'에어로졸/접착제','40':'산업용테이프','50':'자동차유지보수','60':'건물유지관리','70':'헬스케어','80':'필터제품','90':'위생관리용품','a0':'사무용품/DIY','b0':'미분류','c0':'페인트대리점','d0':'타사제품','e0':'신규특가','f0':'테이프커팅','g0':'100원딜','h0':'세트이벤트'};
+  const BH_SUB_NAMES={
+    '1010':'안면부여과식방진마스크','1020':'필터/정화통직결식호흡보호구','1030':'전동/송기식호흡보호구','1040':'산업용장갑','1050':'보안경','1060':'폼타입&재사용귀마개','1070':'귀덮개','1080':'자동용접면','1090':'안전보호복','10a0':'넥가드','10b0':'토시','10c0':'추락방지보호구','10d0':'EARFit밀착검사',
+    '2010':'절단석','2020':'연마석','2030':'수세미연마제품군','2040':'페파제품군','2050':'초정밀연마제품군','2060':'공구&악세서리',
+    '3010':'윤활방청제','3020':'스프레이접착제','3030':'스티커제거제','3040':'세정제','3050':'방수코팅제','3060':'접착제','3070':'에폭시',
+    '4010':'전기절연테이프','4020':'박스포장테이프','4030':'필라멘트테이프','4040':'폼양면테이프','4050':'덕테이프','4060':'듀얼락','4070':'마스킹테이프','4080':'바닥라인테이프','4090':'방수테이프','40a0':'얇은양면테이프','40b0':'특수테이프','40c0':'스트레치랩',
+    '5010':'광택제품','5020':'오토케어제품','5030':'연마제품','5040':'도장제품','5050':'공구',
+    '6010':'미끄럼방지제품','6020':'바닥매트제품','6030':'건축용필름','6040':'바닥유지관리제품','6050':'문풍지',
+    '7010':'구강관리제품','7020':'상처치료및보호제품','7030':'손세정제',
+    '8010':'상업용필터','8020':'샤워필터','8030':'정수기','8040':'정수필터',
+    '9010':'주방청소용품','9020':'일반청소용품','9030':'상업용청소용품',
+    'a010':'스카치테이프','a020':'포스트잇','a030':'스프레이접착관련제품','a040':'가위','a050':'커터','a060':'순간접착제','a070':'코맨드훅','a080':'기타','a090':'양면테이프','a0a0':'마루보호및소음방지제품',
+    'c020':'카바링테이프','c030':'에어로졸(스프레이)','c040':'붓','c050':'로라','c060':'장갑','c070':'마스크','c080':'작업복','c090':'사포','c0a0':'기타'
+  };
+  function subLabel(code){ return BH_SUB_NAMES[code] || ('소분류 '+code); }
   function catLabel(code){
     if(!code) return '';
     if(SCAT_NAMES[code]) return SCAT_NAMES[code];
@@ -2425,6 +2478,10 @@ const PageBehavior = (function(){
         const sf = await sb.from('ga_signup_funnel').select('*');
         signupRows = sf.error ? [] : (sf.data||[]);
       }catch(e){ signupRows=[]; }
+      try{
+        const ck = await sb.from('ga_click_daily').select('*');
+        clickRows = ck.error ? [] : (ck.data||[]);
+      }catch(e){ clickRows=[]; }
       hostToDealer={}; const nmeSet=new Set();
       (dl.data||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -2784,32 +2841,74 @@ const PageBehavior = (function(){
     let rows=itemCatRows.filter(r=>dealerOf(r.hostname)===dealer);
     if(cs) rows=rows.filter(r=>r.date>=cs);
     if(code) rows=rows.filter(r=>r.cat_code===code);
-    const agg={};
+    const roleLbl=curCatRole==='member'?'회원':(curCatRole==='guest'?'비회원':'전체');
+    // 1단계: 소분류별 집계 (sub_code 4자리만 — 구버전 데이터의 2자리 sub는 제외)
+    const subAgg={};
     rows.forEach(r=>{
       const v=catValOf(r); if(v<=0) return;
-      const nm=r.item_name||'(상품명 없음)';
-      agg[nm]=(agg[nm]||0)+v;
+      const sc=String(r.sub_code||'');
+      if(sc.length!==4) return;
+      if(!subAgg[sc]) subAgg[sc]={v:0,items:0};
+      subAgg[sc].v+=v;
     });
-    const list=Object.keys(agg).map(nm=>({nm,v:agg[nm]})).sort((a,b)=>b.v-a.v).slice(0,50);
-    const roleLbl=curCatRole==='member'?'회원':(curCatRole==='guest'?'비회원':'전체');
-    let body='';
-    if(!list.length){
-      body='<div style="text-align:center;padding:28px;color:var(--text-mute);font-size:13px;">이 조건의 상품 조회 데이터가 아직 없어요.<br><span style="font-size:11.5px;">('+roleLbl+' 기준 · 데이터가 더 쌓이면 채워져요)</span></div>';
-    }else{
-      const mx=list[0].v||1;
-      body='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">상품명</th><th class="num">조회수</th></tr></thead><tbody>';
-      list.forEach(it=>{
-        const w=Math.max(3,Math.round(it.v/mx*100));
-        body+='<tr><td style="position:relative;">'
-          +'<div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div>'
-          +'<span style="position:relative;">'+esc(it.nm)+'</span></td>'
-          +'<td class="num" style="font-variant-numeric:tabular-nums;font-weight:500;">'+num(it.v)+'</td></tr>';
+    const subs=Object.keys(subAgg).map(sc=>({sc,v:subAgg[sc].v})).sort((a,b)=>b.v-a.v);
+    document.getElementById('xsell-modal-title').innerHTML=esc(dealer)+' <span style="color:var(--text-sub);font-weight:400;">·</span> '+esc(catName);
+    const bodyEl=document.getElementById('xsell-modal-body');
+    function showProducts(subCode){
+      let prows=rows.filter(r=>String(r.sub_code||'')===subCode);
+      const agg={};
+      prows.forEach(r=>{ const v=catValOf(r); if(v<=0) return; const nm=r.item_name||'(상품명 없음)'; agg[nm]=(agg[nm]||0)+v; });
+      const list=Object.keys(agg).map(nm=>({nm,v:agg[nm]})).sort((a,b)=>b.v-a.v).slice(0,50);
+      document.getElementById('xsell-modal-sub').textContent=roleLbl+' 조회 기준 · '+subLabel(subCode)+' 상품 TOP '+list.length;
+      let body='<div style="margin-bottom:10px;"><button id="xsell-back" style="border:1px solid var(--border);background:var(--bg-soft);border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer;color:var(--text-sub);">‹ 소분류 목록으로</button></div>';
+      if(!list.length){
+        body+='<div style="text-align:center;padding:24px;color:var(--text-mute);font-size:13px;">이 소분류의 상품 조회 데이터가 아직 없어요.</div>';
+      }else{
+        const mx=list[0].v||1;
+        body+='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">상품명</th><th class="num">조회수</th></tr></thead><tbody>';
+        list.forEach(it=>{
+          const w=Math.max(3,Math.round(it.v/mx*100));
+          body+='<tr><td style="position:relative;">'
+            +'<div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div>'
+            +'<span style="position:relative;">'+esc(it.nm)+'</span></td>'
+            +'<td class="num" style="font-variant-numeric:tabular-nums;font-weight:500;">'+num(it.v)+'</td></tr>';
+        });
+        body+='</tbody></table>';
+      }
+      bodyEl.innerHTML=body;
+      const bk=document.getElementById('xsell-back'); if(bk) bk.onclick=showSubs;
+    }
+    function showSubs(){
+      document.getElementById('xsell-modal-sub').textContent=roleLbl+' 조회 기준 · 소분류를 누르면 상품이 보여요';
+      if(!subs.length){
+        // 소분류 데이터가 아직 없으면 (7/4 이전 데이터뿐이면) 상품 바로 표시로 폴백
+        const agg={};
+        rows.forEach(r=>{ const v=catValOf(r); if(v<=0) return; const nm=r.item_name||'(상품명 없음)'; agg[nm]=(agg[nm]||0)+v; });
+        const list=Object.keys(agg).map(nm=>({nm,v:agg[nm]})).sort((a,b)=>b.v-a.v).slice(0,50);
+        document.getElementById('xsell-modal-sub').textContent=roleLbl+' 조회 기준 · 상품 TOP '+list.length+' (소분류 데이터는 7/4부터 쌓여요)';
+        if(!list.length){ bodyEl.innerHTML='<div style="text-align:center;padding:28px;color:var(--text-mute);font-size:13px;">이 조건의 조회 데이터가 아직 없어요.</div>'; return; }
+        const mx=list[0].v||1;
+        let body='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">상품명</th><th class="num">조회수</th></tr></thead><tbody>';
+        list.forEach(it=>{ const w=Math.max(3,Math.round(it.v/mx*100));
+          body+='<tr><td style="position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div><span style="position:relative;">'+esc(it.nm)+'</span></td><td class="num" style="font-variant-numeric:tabular-nums;font-weight:500;">'+num(it.v)+'</td></tr>'; });
+        bodyEl.innerHTML=body+'</tbody></table>';
+        return;
+      }
+      const mx=subs[0].v||1;
+      let body='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">소분류</th><th class="num">조회수</th><th style="width:30px;"></th></tr></thead><tbody>';
+      subs.forEach(s=>{
+        const w=Math.max(3,Math.round(s.v/mx*100));
+        body+='<tr class="xsell-sub-row" data-sc="'+esc(s.sc)+'" style="cursor:pointer;">'
+          +'<td style="position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div>'
+          +'<span style="position:relative;font-weight:600;">'+esc(subLabel(s.sc))+'</span> <span style="position:relative;color:var(--text-mute);font-size:11px;">'+esc(s.sc)+'</span></td>'
+          +'<td class="num" style="font-variant-numeric:tabular-nums;font-weight:600;">'+num(s.v)+'</td>'
+          +'<td style="color:var(--text-mute);">›</td></tr>';
       });
       body+='</tbody></table>';
+      bodyEl.innerHTML=body;
+      bodyEl.querySelectorAll('.xsell-sub-row').forEach(tr=>{ tr.onclick=()=>showProducts(tr.dataset.sc); });
     }
-    document.getElementById('xsell-modal-title').innerHTML=esc(dealer)+' <span style="color:var(--text-sub);font-weight:400;">·</span> '+esc(catName);
-    document.getElementById('xsell-modal-sub').textContent=roleLbl+' 조회 기준 · 이 대리점이 이 카테고리에서 본 상품 (TOP '+list.length+')';
-    document.getElementById('xsell-modal-body').innerHTML=body;
+    showSubs();
     document.getElementById('xsell-modal').style.display='flex';
   }
   function closeCrosssellDrill(){ const m=document.getElementById('xsell-modal'); if(m) m.style.display='none'; }
@@ -2993,7 +3092,7 @@ const PageBehavior = (function(){
   }
   function render(){
     const rows=filteredRows(), s=sum(rows);
-    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor(); renderScroll(); renderSignup();
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor(); renderScroll(); renderSignup(); renderClicks();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
   }
   function scrollFilteredRows(){
@@ -3101,27 +3200,38 @@ const PageBehavior = (function(){
     const box=document.getElementById('bh-signup'); if(!box) return;
     const rows=signupFilteredRows();
     const st={}; rows.forEach(r=>{ st[r.step_code]=(st[r.step_code]||0)+(+r.users||0); });
-    const agree=(st['02_약관_개인']||0)+(st['02_약관_기업']||0)+(st['02_약관_기타']||0);
-    const stages=[
-      {label:'① 가입 안내', users:st['01_안내']||0, sub:''},
-      {label:'② 약관 동의', users:agree, sub:`개인 ${num(st['02_약관_개인']||0)} · 기업 ${num(st['02_약관_기업']||0)}${st['02_약관_기타']?(' · 기타 '+num(st['02_약관_기타'])):''}`},
-      {label:'③ 정보 입력', users:st['03_정보입력']||0, sub:''},
-      {label:'④ 가입 완료', users:st['04_완료']||0, sub:''}
-    ];
+    // lv 필터: 전체=개인+기업+기타+구코드(접미사 없음), 개인/기업=해당 접미사만
+    const lvKeys = curSignupLv==='all' ? ['개인','기업','기타'] : [curSignupLv];
+    const g=(base)=>{
+      let v=lvKeys.reduce((a,k)=>a+(st[base+'_'+k]||0),0);
+      if(curSignupLv==='all') v+=(st[base]||0); // 7/2 이전 구코드(접미사 없음) 합산
+      return v;
+    };
+    const agreeSub = curSignupLv==='all'
+      ? `개인 ${num(st['02_약관_개인']||0)} · 기업 ${num(st['02_약관_기업']||0)}${st['02_약관_기타']?(' · 기타 '+num(st['02_약관_기타'])):''}` : '';
+    let stages=[];
+    if(curSignupLv==='all') stages.push({label:'① 가입 안내', users:st['01_안내']||0, sub:'', opt:false});
+    stages.push({label:(curSignupLv==='all'?'② 약관 동의':'① 약관 동의'), users:g('02_약관'), sub:agreeSub, opt:false});
+    stages.push({label:(curSignupLv==='all'?'③ 정보입력 도달':'② 정보입력 도달'), users:g('03_정보입력'), sub:'페이지 진입', opt:false});
+    stages.push({label:'┗ 입력 시작', users:g('03f_입력시작'), sub:'폼에 실제 입력', opt:true});
+    stages.push({label:'┗ 입력 제출', users:g('03s_입력제출'), sub:'제출 버튼 클릭', opt:true});
+    stages.push({label:(curSignupLv==='all'?'④ 가입 완료':'③ 가입 완료'), users:g('04_완료'), sub:'', opt:false});
+    // 폼 단계는 데이터 있을 때만 표시 (7/3 이후 수집분)
+    stages=stages.filter(s=>!s.opt || s.users>0);
     const total=stages.reduce((a,s)=>a+s.users,0);
-    if(!total){ box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">회원가입 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(BigQuery 연동분 · 기간을 넓혀보세요)</span></div>'; return; }
+    if(!total){ box.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-mute);font-size:13px;">'+(curSignupLv!=='all'?curSignupLv+' 구분 데이터가 아직 없어요 (7/2 이후 수집분부터 구분 가능).<br>':'회원가입 데이터가 아직 없어요.<br>')+'<span style="font-size:11.5px;">(기간을 넓혀보세요)</span></div>'; return; }
     const first=Math.max(stages[0].users,1);
-    // 최대 이탈 단계 찾기 (강조용)
     let maxDrop=-1, maxDropIdx=-1;
     stages.forEach((s,i)=>{ if(i>0){ const p=stages[i-1].users; if(p>0){ const d=(p-s.users)/p*100; if(d>maxDrop){maxDrop=d; maxDropIdx=i;} } } });
     box.innerHTML=stages.map((s,i)=>{
       const w=Math.max(s.users/first*100,2);
-      return `<div style="margin-bottom:${i<stages.length-1?'4px':'0'};">
+      const barBg = s.opt ? 'linear-gradient(90deg,#5b8ab8,#3d6a94)' : 'linear-gradient(90deg,#2c5f96,#1F4E78)';
+      return `<div style="margin-bottom:${i<stages.length-1?'4px':'0'};${s.opt?'padding-left:14px;':''}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;">
           <div style="font-size:12.5px;color:var(--text);font-weight:600;">${s.label}${s.sub?` <span style="color:var(--text-mute);font-weight:400;font-size:11px;">${s.sub}</span>`:''}</div>
           <div style="flex:0 0 auto;font-size:13.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${num(s.users)}명</div>
         </div>
-        <div style="height:22px;background:var(--bg-soft);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${w}%;background:linear-gradient(90deg,#2c5f96,#1F4E78);border-radius:5px;"></div></div>
+        <div style="height:${s.opt?'16px':'22px'};background:var(--bg-soft);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${w}%;background:${barBg};border-radius:5px;"></div></div>
       </div>
       ${i<stages.length-1?`<div style="text-align:right;margin:3px 0 9px;">${
         (()=>{ const p=s.users, nx=stages[i+1].users; const cv=p>0?nx/p*100:0; const dp=100-cv; const bn=((i+1)===maxDropIdx && dp>=1);
@@ -3129,6 +3239,60 @@ const PageBehavior = (function(){
         })()
       }</div>`:''}`;
     }).join('');
+  }
+  function clickFilteredRows(){
+    const cs=cutDateStr(); let rows=clickRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curClickMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curClickMall);
+    return rows;
+  }
+  function clickValOf(r){
+    if(curClickRole==='member') return (+r.member_clicks||0);
+    if(curClickRole==='guest')  return (+r.guest_clicks||0);
+    return (+r.member_clicks||0)+(+r.guest_clicks||0);
+  }
+  function clickBars(box, arr, emptyMsg){
+    if(!box) return;
+    if(!arr.length){ box.innerHTML='<div style="text-align:center;padding:18px;color:var(--text-mute);font-size:13px;">'+emptyMsg+'</div>'; return; }
+    const top=Math.max(arr[0].v,1);
+    box.innerHTML=arr.map((d,i)=>{
+      const w=Math.max(d.v/top*100,4);
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="flex:0 0 20px;text-align:right;font-size:11px;color:var(--text-mute);">${i+1}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(d.label)}">${esc(d.label)}</div>
+          <div style="height:6px;background:var(--bg-soft);border-radius:4px;margin-top:4px;"><div style="height:100%;width:${w}%;background:linear-gradient(90deg,#2c5f96,#1F4E78);border-radius:4px;"></div></div>
+        </div>
+        <div style="flex:0 0 auto;font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${num(d.v)}</div>
+      </div>`;
+    }).join('');
+  }
+  function renderClicks(){
+    const rows=clickFilteredRows();
+    const roleLbl=curClickRole==='member'?'회원 ':(curClickRole==='guest'?'비회원 ':'');
+    const tabs={};
+    rows.filter(r=>r.event_name==='select_tab').forEach(r=>{ const k=r.item_key||'(미상)'; tabs[k]=(tabs[k]||0)+clickValOf(r); });
+    const tabArr=Object.entries(tabs).map(([k,v])=>({label:k,v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,15);
+    clickBars(document.getElementById('bh-click-tabs'), tabArr, roleLbl+'탭 클릭 데이터가 아직 없어요.');
+    const bans={};
+    rows.filter(r=>r.event_name==='select_content').forEach(r=>{
+      const k=r.item_key||'(미상)';
+      if(!bans[k]) bans[k]={v:0,label:''};
+      bans[k].v+=clickValOf(r);
+      if(r.item_label && r.item_label!=='메인') bans[k].label=r.item_label;
+    });
+    const banArr=Object.entries(bans).map(([k,o])=>({label:(o.label?o.label+' ':'')+'(배너 #'+k+')',v:o.v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,15);
+    clickBars(document.getElementById('bh-click-banners'), banArr, roleLbl+'배너 클릭 데이터가 아직 없어요.');
+    const evs={};
+    rows.filter(r=>r.event_name==='participate_event').forEach(r=>{
+      const k=r.item_key||'(미상)';
+      if(!evs[k]) evs[k]={v:0,label:''};
+      evs[k].v+=clickValOf(r);
+      if(r.item_label) evs[k].label=r.item_label;
+    });
+    const ACTION_KR={roulette_spin:'룰렛 돌리기',apply:'응모하기',coupon_download:'쿠폰 받기'};
+    const evArr=Object.entries(evs).map(([k,o])=>({label:(o.label?o.label+' · ':'')+(ACTION_KR[k]||k),v:o.v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
+    clickBars(document.getElementById('bh-click-events'), evArr, roleLbl+'이벤트 참여 데이터가 아직 없어요.');
   }
   function buildControls(){
     const sel=document.getElementById('bh-mall');
@@ -3179,6 +3343,16 @@ const PageBehavior = (function(){
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
       sgsel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       sgsel.addEventListener('change',()=>{ curSignupMall=sgsel.value; renderSignup(); });
+    }
+    const sglv=document.getElementById('bh-signup-lv');
+    if(sglv && !sglv.__wired){ sglv.__wired=1; sglv.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ sglv.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curSignupLv=b.dataset.l; renderSignup(); })); }
+    const ckrole=document.getElementById('bh-click-role');
+    if(ckrole && !ckrole.__wired){ ckrole.__wired=1; ckrole.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ ckrole.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curClickRole=b.dataset.r; renderClicks(); })); }
+    const cksel=document.getElementById('bh-click-mall');
+    if(cksel && !cksel.__wired){ cksel.__wired=1;
+      const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
+      cksel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      cksel.addEventListener('change',()=>{ curClickMall=cksel.value; renderClicks(); });
     }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
