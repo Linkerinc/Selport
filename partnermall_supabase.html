@@ -3223,7 +3223,7 @@ const PageBehavior = (function(){
     const first=Math.max(stages[0].users,1);
     let maxDrop=-1, maxDropIdx=-1;
     stages.forEach((s,i)=>{ if(i>0){ const p=stages[i-1].users; if(p>0){ const d=(p-s.users)/p*100; if(d>maxDrop){maxDrop=d; maxDropIdx=i;} } } });
-    box.innerHTML=stages.map((s,i)=>{
+    let html=stages.map((s,i)=>{
       const w=Math.max(s.users/first*100,2);
       const barBg = s.opt ? 'linear-gradient(90deg,#5b8ab8,#3d6a94)' : 'linear-gradient(90deg,#2c5f96,#1F4E78)';
       return `<div style="margin-bottom:${i<stages.length-1?'4px':'0'};${s.opt?'padding-left:14px;':''}">
@@ -3231,14 +3231,23 @@ const PageBehavior = (function(){
           <div style="font-size:12.5px;color:var(--text);font-weight:600;">${s.label}${s.sub?` <span style="color:var(--text-mute);font-weight:400;font-size:11px;">${s.sub}</span>`:''}</div>
           <div style="flex:0 0 auto;font-size:13.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${num(s.users)}명</div>
         </div>
-        <div style="height:${s.opt?'16px':'22px'};background:var(--bg-soft);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${w}%;background:${barBg};border-radius:5px;"></div></div>
+        <div style="height:${s.opt?'16px':'22px'};background:var(--bg-soft);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${Math.min(w,100)}%;background:${barBg};border-radius:5px;"></div></div>
       </div>
       ${i<stages.length-1?`<div style="text-align:right;margin:3px 0 9px;">${
-        (()=>{ const p=s.users, nx=stages[i+1].users; const cv=p>0?nx/p*100:0; const dp=100-cv; const bn=((i+1)===maxDropIdx && dp>=1);
+        (()=>{ const p=s.users, nx=stages[i+1].users; const cv=p>0?nx/p*100:0; const dp=Math.max(100-cv,0); const bn=((i+1)===maxDropIdx && dp>=1);
+          if(cv>100) return `<span style="font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--text-mute);font-weight:500;">↓ 다음 단계가 더 많음 (직접 유입·재방문 포함)</span>`;
           return `<span style="font-size:11.5px;font-variant-numeric:tabular-nums;color:${bn?'#c0392b':'var(--text-mute)'};font-weight:${bn?'700':'500'};">↓ 다음 단계 전환 ${cv.toFixed(0)}% · 이탈 ${dp.toFixed(0)}%${bn?' ⚠ 최대 이탈':''}</span>`;
         })()
       }</div>`:''}`;
     }).join('');
+    // 개인/기업 모드: 구분값 도입(7/2) 이전 구분불가 과거분 안내
+    if(curSignupLv!=='all'){
+      const legacyReach=st['03_정보입력']||0, legacyDone=st['04_완료']||0;
+      if(legacyReach>0 || legacyDone>0){
+        html+=`<div style="margin-top:12px;padding:9px 12px;background:var(--bg-soft);border-radius:7px;font-size:11.5px;color:var(--text-sub);">※ 구분값 도입(7/2) <b>이전</b> 데이터라 개인/기업을 나눌 수 없는 과거분: 정보입력 도달 <b>${num(legacyReach)}명</b> · 가입 완료 <b>${num(legacyDone)}명</b> — <b>[전체]</b> 보기에만 포함돼요.</div>`;
+      }
+    }
+    box.innerHTML=html;
   }
   function clickFilteredRows(){
     const cs=cutDateStr(); let rows=clickRows;
@@ -3284,15 +3293,36 @@ const PageBehavior = (function(){
     const banArr=Object.entries(bans).map(([k,o])=>({label:(o.label?o.label+' ':'')+'(배너 #'+k+')',v:o.v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,15);
     clickBars(document.getElementById('bh-click-banners'), banArr, roleLbl+'배너 클릭 데이터가 아직 없어요.');
     const evs={};
+    const actSum={};
     rows.filter(r=>r.event_name==='participate_event').forEach(r=>{
       const k=r.item_key||'(미상)';
       if(!evs[k]) evs[k]={v:0,label:''};
       evs[k].v+=clickValOf(r);
+      actSum[k]=(actSum[k]||0)+clickValOf(r);
       if(r.item_label) evs[k].label=r.item_label;
     });
     const ACTION_KR={roulette_spin:'룰렛 돌리기',apply:'응모하기',coupon_download:'쿠폰 받기'};
+    const ACTION_EMOJI={roulette_spin:'🎰',apply:'✍️',coupon_download:'🎫'};
+    // 유형별 요약 뱃지 (룰렛/응모/쿠폰은 0건이어도 표시)
+    const evBox=document.getElementById('bh-click-events');
+    let sumHtml='';
+    const allActs=['roulette_spin','coupon_download','apply'];
+    Object.keys(actSum).forEach(k=>{ if(allActs.indexOf(k)<0) allActs.push(k); });
+    sumHtml='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">'+allActs.map(a=>{
+      const v=actSum[a]||0;
+      const on=v>0;
+      return '<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:14px;font-size:12px;font-weight:600;'
+        +(on?'background:var(--primary-light);color:var(--primary);':'background:var(--bg-soft);color:var(--text-mute);')
+        +'">'+(ACTION_EMOJI[a]||'▸')+' '+esc(ACTION_KR[a]||a)+' <b style="font-variant-numeric:tabular-nums;">'+num(v)+'</b></span>';
+    }).join('')+'</div>';
     const evArr=Object.entries(evs).map(([k,o])=>({label:(o.label?o.label+' · ':'')+(ACTION_KR[k]||k),v:o.v})).filter(o=>o.v>0).sort((a,b)=>b.v-a.v).slice(0,10);
-    clickBars(document.getElementById('bh-click-events'), evArr, roleLbl+'이벤트 참여 데이터가 아직 없어요.');
+    if(evBox){
+      if(!evArr.length){ evBox.innerHTML=sumHtml+'<div style="text-align:center;padding:12px;color:var(--text-mute);font-size:13px;">'+roleLbl+'이벤트 참여 데이터가 아직 없어요.</div>'; }
+      else{
+        evBox.innerHTML=sumHtml+'<div id="bh-click-events-list"></div>';
+        clickBars(document.getElementById('bh-click-events-list'), evArr, '');
+      }
+    }
   }
   function buildControls(){
     const sel=document.getElementById('bh-mall');
