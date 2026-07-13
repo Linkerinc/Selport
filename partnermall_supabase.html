@@ -2578,11 +2578,14 @@ const PageBehavior = (function(){
     if(modal) modal.addEventListener('click',e=>{ if(e.target===modal) close(); });
     document.addEventListener('keydown',e=>{ if(e.key==='Escape' && modal && modal.style.display==='flex') close(); });
   }
-  function openDetail(metric){
+  function openDetail(metric, drillDealer){
+    drillDealer = drillDealer || null;               // 대리점 드릴다운 대상
     const meta=METRIC_META[metric]; if(!meta) return;
     wireModal();
     const modal=document.getElementById('bh-detail-modal'); if(!modal) return;
-    const rows=filteredRows();                       // 현재 몰·기간 반영
+    const rows = drillDealer
+      ? periodRows().filter(r=>dealerOf(r.hostname)===drillDealer)  // 드릴: 기간 내 해당 대리점만
+      : filteredRows();                              // 기본: 현재 몰·기간 반영
     // 일자별 시리즈
     const byDate={};
     rows.forEach(r=>{ const d=r.date; if(!byDate[d])byDate[d]={s:0,p:0,m:0}; byDate[d].s+=(+r.sessions||0); byDate[d].p+=(+r.purchases||0); byDate[d].m+=(+r[meta.key]||0); });
@@ -2604,7 +2607,8 @@ const PageBehavior = (function(){
     if(curDays>0 && maxDate){
       const start=cutDateStr(), prevEnd=dateMinus(start,1), prevStart=dateMinus(start,curDays);
       let pr=gaRows.filter(r=>r.date>=prevStart && r.date<=prevEnd);
-      if(curMall!=='all') pr=pr.filter(r=>dealerOf(r.hostname)===curMall);
+      const cmpMall = drillDealer || (curMall!=='all' ? curMall : null);
+      if(cmpMall) pr=pr.filter(r=>dealerOf(r.hostname)===cmpMall);
       let curV, prevV;
       if(meta.ratio){
         const cs=rows.reduce((a,r)=>a+(+r.sessions||0),0), cp=rows.reduce((a,r)=>a+(+r.purchases||0),0);
@@ -2627,25 +2631,37 @@ const PageBehavior = (function(){
       : [['합계',summaryVal],['일평균',avgVal]]
     ).map(([l,v])=>`<div class="bh-dcard"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join('') + changeCard;
     document.getElementById('bh-detail-summary').innerHTML=sumCards;
-    document.getElementById('bh-detail-title').textContent=`${meta.label} 상세`;
+    document.getElementById('bh-detail-title').textContent = drillDealer ? `${meta.label} 상세 — ${drillDealer}` : `${meta.label} 상세`;
     // 대리점(몰)별 분해 (기간 반영, 전체 몰)
     const byMall={};
     periodRows().forEach(r=>{ const dn=dealerOf(r.hostname); if(!byMall[dn])byMall[dn]={s:0,p:0,m:0}; byMall[dn].s+=(+r.sessions||0); byMall[dn].p+=(+r.purchases||0); byMall[dn].m+=(+r[meta.key]||0); });
     let marr;
     if(meta.ratio){
       marr=Object.entries(byMall).map(([n,o])=>({n,val:o.s>0?o.p/o.s*100:0,ses:o.s})).filter(d=>isShownDealer(d.n)).sort((a,b)=>b.val-a.val);
+      if(drillDealer) marr=marr.filter(d=>d.n===drillDealer);
       document.getElementById('bh-detail-mcol').textContent='전환율';
       document.getElementById('bh-detail-mhead').textContent='세션수';
-      document.getElementById('bh-detail-mlabel').textContent='· 전환율 순';
-      document.getElementById('bh-detail-mbody').innerHTML = marr.map(d=>`<tr><td>${esc(d.n)}</td><td class="num">${d.val.toFixed(2)}%</td><td class="num">${num(d.ses)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--text-mute);">데이터 없음</td></tr>';
+      document.getElementById('bh-detail-mlabel').innerHTML = drillDealer
+        ? '<button id="bh-detail-back" style="border:1px solid var(--border);background:var(--bg-soft);border-radius:6px;padding:4px 10px;font-size:11.5px;cursor:pointer;color:var(--text-sub);">‹ 전체 대리점</button>'
+        : '· 전환율 순 · <span style="color:var(--primary);">행을 누르면 대리점별 추이</span>';
+      document.getElementById('bh-detail-mbody').innerHTML = marr.map(d=>`<tr data-dn="${esc(d.n)}" style="cursor:pointer;"><td>${esc(d.n)}</td><td class="num">${d.val.toFixed(2)}%</td><td class="num">${num(d.ses)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--text-mute);">데이터 없음</td></tr>';
     } else {
       marr=Object.entries(byMall).map(([n,o])=>({n,val:o.m})).filter(d=>isShownDealer(d.n)).sort((a,b)=>b.val-a.val);
       const tot=marr.reduce((a,d)=>a+d.val,0)||1;
+      if(drillDealer) marr=marr.filter(d=>d.n===drillDealer);
       document.getElementById('bh-detail-mcol').textContent=meta.label;
       document.getElementById('bh-detail-mhead').textContent='비중';
-      document.getElementById('bh-detail-mlabel').textContent='· '+meta.label+' 순';
-      document.getElementById('bh-detail-mbody').innerHTML = marr.map(d=>`<tr><td>${esc(d.n)}</td><td class="num">${num(d.val)}</td><td class="num">${(d.val/tot*100).toFixed(1)}%</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--text-mute);">데이터 없음</td></tr>';
+      document.getElementById('bh-detail-mlabel').innerHTML = drillDealer
+        ? '<button id="bh-detail-back" style="border:1px solid var(--border);background:var(--bg-soft);border-radius:6px;padding:4px 10px;font-size:11.5px;cursor:pointer;color:var(--text-sub);">‹ 전체 대리점</button>'
+        : '· '+meta.label+' 순 · <span style="color:var(--primary);">행을 누르면 대리점별 추이</span>';
+      document.getElementById('bh-detail-mbody').innerHTML = marr.map(d=>`<tr data-dn="${esc(d.n)}" style="cursor:pointer;"><td>${esc(d.n)}</td><td class="num">${num(d.val)}</td><td class="num">${(d.val/tot*100).toFixed(1)}%</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--text-mute);">데이터 없음</td></tr>';
     }
+    // 드릴다운 배선: 행 클릭 → 해당 대리점 뷰 / 뒤로가기 → 전체
+    document.querySelectorAll('#bh-detail-mbody tr[data-dn]').forEach(tr=>{
+      tr.onclick=()=>openDetail(metric, drillDealer ? null : tr.dataset.dn);
+    });
+    const bk=document.getElementById('bh-detail-back');
+    if(bk) bk.onclick=()=>openDetail(metric, null);
     // 차트
     modal.style.display='flex';
     const cv=document.getElementById('bh-detail-chart');
