@@ -2297,6 +2297,18 @@ body {
       <div class="bh-note" style="margin-top:12px;">메인 화면에서 사용자가 실제로 <b>무엇을 누르는지</b>예요. 탭 클릭이 많은 메뉴가 관심사이고, 배너 클릭이 적으면 배너 교체 신호예요. 참여 수는 <b>실제 참여 성공</b> 기준(자격 없는 클릭 제외)이에요.</div>
     </div>
 
+    <div class="bh-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">👥 회원별 관심 상품 <span class="hint">누가 무엇을 보고 있나 · 영업 골든리스트 (7/8 수집 시작)</span></h3>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input id="bh-member-search" type="text" placeholder="업체명·ID 검색" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);width:150px;">
+          <select id="bh-member-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
+        </div>
+      </div>
+      <div id="bh-member-list" style="margin-top:14px;"></div>
+      <div class="bh-note" style="margin-top:12px;">로그인 회원이 <b>실제로 조회한 상품</b>을 회원 단위로 모아 보여줘요. 조회가 많은데 최근 구매가 없는 회원이 <b>영업 우선순위</b>예요. 행을 누르면 그 회원이 본 상품 전체가 보여요. 회원 식별은 해시 매칭 기반이라 <b>주문 이력이 있는 회원만</b> 업체명이 표시돼요(그 외에는 익명 처리).</div>
+    </div>
+
     <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
 
     <div id="bh-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;align-items:center;justify-content:center;padding:20px;">
@@ -2347,6 +2359,8 @@ const PageBehavior = (function(){
   let signupRows=[];
   let clickRows=[];
   let curClickMall='all', curClickRole='all';
+  let memberRows=[], memberMap={};
+  let curMemberMall='all', memberSearch='';
   let curSignupLv='all';
   let pageArr=[];
   let curMall='all', curDays=30;
@@ -2482,6 +2496,15 @@ const PageBehavior = (function(){
         const ck = await sb.from('ga_click_daily').select('*');
         clickRows = ck.error ? [] : (ck.data||[]);
       }catch(e){ clickRows=[]; }
+      try{
+        const mi = await sb.from('ga_member_item_daily').select('*');
+        memberRows = mi.error ? [] : (mi.data||[]);
+      }catch(e){ memberRows=[]; }
+      try{
+        const mm = await sb.from('member_hash_map').select('*');
+        memberMap = {};
+        (mm.error ? [] : (mm.data||[])).forEach(m=>{ memberMap[m.user_hash]=m; });
+      }catch(e){ memberMap={}; }
       hostToDealer={}; const nmeSet=new Set();
       (dl.data||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -3094,7 +3117,7 @@ const PageBehavior = (function(){
   }
   function render(){
     const rows=filteredRows(), s=sum(rows);
-    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor(); renderScroll(); renderSignup(); renderClicks();
+    renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor(); renderScroll(); renderSignup(); renderClicks(); renderMembers();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent=curDays>0?('최근 '+curDays+'일'):'전체 기간';
   }
   function scrollFilteredRows(){
@@ -3326,6 +3349,82 @@ const PageBehavior = (function(){
       }
     }
   }
+  function renderMembers(){
+    const box=document.getElementById('bh-member-list'); if(!box) return;
+    const cs=cutDateStr();
+    let rows=memberRows;
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curMemberMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMemberMall);
+    // 회원 단위 집계
+    const byM={};
+    rows.forEach(r=>{
+      const h=r.user_hash; if(!h) return;
+      if(!byM[h]) byM[h]={h, total:0, subs:{}, items:{}, lastDate:''};
+      const v=(+r.views||0);
+      byM[h].total+=v;
+      if(r.sub_code) byM[h].subs[r.sub_code]=(byM[h].subs[r.sub_code]||0)+v;
+      byM[h].items[r.item_name]=(byM[h].items[r.item_name]||0)+v;
+      if(r.date>byM[h].lastDate) byM[h].lastDate=r.date;
+    });
+    let arr=Object.values(byM);
+    // 검색 필터 (업체명/ID)
+    const q=(memberSearch||'').trim().toLowerCase();
+    arr=arr.map(m=>{
+      const info=memberMap[m.h]||null;
+      return {...m, company:(info?info.company:''), mid:(info?info.member_id:''), dealer:(info?info.dealer:'')};
+    });
+    if(q) arr=arr.filter(m=>(m.company||'').toLowerCase().indexOf(q)>=0 || (m.mid||'').toLowerCase().indexOf(q)>=0);
+    arr.sort((a,b)=>b.total-a.total);
+    const top=arr.slice(0,30);
+    if(!top.length){
+      box.innerHTML='<div style="text-align:center;padding:24px;color:var(--text-mute);font-size:13px;">회원별 조회 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(7/8부터 수집 시작 — 하루 이틀이면 채워져요)</span></div>';
+      return;
+    }
+    let html='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">회원</th><th style="text-align:left;">주요 관심</th><th class="num">조회수</th><th style="text-align:right;">최근 조회</th><th style="width:26px;"></th></tr></thead><tbody>';
+    top.forEach(m=>{
+      const topSub=Object.entries(m.subs).sort((a,b)=>b[1]-a[1])[0];
+      const nm=m.company ? esc(m.company)+' <span style="color:var(--text-mute);font-size:11px;">'+esc(m.mid)+'</span>'
+                         : '<span style="color:var(--text-mute);">미확인 회원</span> <span style="color:var(--text-mute);font-size:10.5px;" title="'+esc(m.h)+'">'+esc(m.h.slice(0,8))+'…</span>';
+      html+='<tr class="bh-member-row" data-h="'+esc(m.h)+'" style="cursor:pointer;">'
+        +'<td>'+nm+'</td>'
+        +'<td style="font-size:12px;color:var(--text-sub);">'+(topSub?esc(subLabel(topSub[0])):'—')+'</td>'
+        +'<td class="num" style="font-weight:700;font-variant-numeric:tabular-nums;">'+num(m.total)+'</td>'
+        +'<td style="text-align:right;font-size:11.5px;color:var(--text-mute);font-variant-numeric:tabular-nums;">'+esc(m.lastDate)+'</td>'
+        +'<td style="color:var(--text-mute);">›</td></tr>';
+    });
+    html+='</tbody></table>';
+    box.innerHTML=html;
+    box.querySelectorAll('.bh-member-row').forEach(tr=>{ tr.onclick=()=>openMemberDetail(tr.dataset.h); });
+  }
+  function openMemberDetail(hash){
+    const cs=cutDateStr();
+    let rows=memberRows.filter(r=>r.user_hash===hash);
+    if(cs) rows=rows.filter(r=>r.date>=cs);
+    if(curMemberMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMemberMall);
+    const info=memberMap[hash]||null;
+    const title = info ? esc(info.company||info.member_id) : '미확인 회원';
+    const sub = info ? ('ID: '+esc(info.member_id)+(info.dealer?' · '+esc(info.dealer):'')) : ('해시 '+esc(hash.slice(0,16))+'…');
+    const agg={};
+    rows.forEach(r=>{ const k=r.item_name; if(!agg[k]) agg[k]={v:0,sub:r.sub_code||''}; agg[k].v+=(+r.views||0); });
+    const list=Object.entries(agg).map(([nm,o])=>({nm,v:o.v,sub:o.sub})).sort((a,b)=>b.v-a.v).slice(0,50);
+    let body='';
+    if(!list.length){ body='<div style="text-align:center;padding:24px;color:var(--text-mute);font-size:13px;">조회 데이터가 없어요.</div>'; }
+    else{
+      const mx=list[0].v||1;
+      body='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">상품명</th><th style="text-align:left;">소분류</th><th class="num">조회수</th></tr></thead><tbody>';
+      list.forEach(it=>{
+        const w=Math.max(3,Math.round(it.v/mx*100));
+        body+='<tr><td style="position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div><span style="position:relative;">'+esc(it.nm)+'</span></td>'
+          +'<td style="font-size:11.5px;color:var(--text-sub);">'+(it.sub?esc(subLabel(it.sub)):'—')+'</td>'
+          +'<td class="num" style="font-variant-numeric:tabular-nums;font-weight:500;">'+num(it.v)+'</td></tr>';
+      });
+      body+='</tbody></table>';
+    }
+    document.getElementById('xsell-modal-title').innerHTML='👥 '+title;
+    document.getElementById('xsell-modal-sub').textContent=sub+' · 이 회원이 본 상품';
+    document.getElementById('xsell-modal-body').innerHTML=body;
+    document.getElementById('xsell-modal').style.display='flex';
+  }
   function buildControls(){
     const sel=document.getElementById('bh-mall');
     sel.innerHTML='<option value="all">전체 통합</option>'+dealerNames.map(n=>`<option value="${n}">${n}</option>`).join('');
@@ -3385,6 +3484,16 @@ const PageBehavior = (function(){
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
       cksel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       cksel.addEventListener('change',()=>{ curClickMall=cksel.value; renderClicks(); });
+    }
+    const mbsel=document.getElementById('bh-member-mall');
+    if(mbsel && !mbsel.__wired){ mbsel.__wired=1;
+      const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
+      mbsel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      mbsel.addEventListener('change',()=>{ curMemberMall=mbsel.value; renderMembers(); });
+    }
+    const mbsrch=document.getElementById('bh-member-search');
+    if(mbsrch && !mbsrch.__wired){ mbsrch.__wired=1;
+      mbsrch.addEventListener('input',()=>{ memberSearch=mbsrch.value; renderMembers(); });
     }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
