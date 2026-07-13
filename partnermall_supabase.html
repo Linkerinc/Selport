@@ -4137,6 +4137,34 @@ document.getElementById('modal-cancel-btn').addEventListener('click', () => clos
 // ============================================================
 // PageDashboard 모듈
 // ============================================================
+// ===== 등록 대리점 화이트리스트 (dealers 테이블 기준 · 전 페이지 공유) =====
+// 표기 차이 흡수: "(주)네오스엠" / "네오스엠" / "한신그레이스 (주)" 를 같은 것으로 취급
+window.__normDealerName = function(s){
+  return String(s||'').replace(/\(주\)|㈜/g,'').replace(/\s+/g,'').replace(/\(.*?\)/g,'');
+};
+window.__dealerWL = null;
+window.__dealerWLPromise = null;
+window.loadDealerWhitelist = function(){
+  if(window.__dealerWLPromise) return window.__dealerWLPromise;
+  window.__dealerWLPromise = (async ()=>{
+    try{
+      const sb=window.__sb; if(!sb) return null;
+      const r=await sb.from('dealers').select('dealer_name,hostname');
+      const set=new Set();
+      (r.data||[]).forEach(d=>set.add(window.__normDealerName(d.dealer_name||d.hostname)));
+      if(set.size) window.__dealerWL=set;
+    }catch(e){}
+    return window.__dealerWL;
+  })();
+  return window.__dealerWLPromise;
+};
+// 화이트리스트가 아직 없으면(로드 실패 포함) 전부 통과 — 매출 화면이 비는 사고 방지
+window.isRegisteredDealerName = function(name){
+  const wl=window.__dealerWL;
+  if(!wl || !wl.size) return true;
+  return wl.has(window.__normDealerName(name));
+};
+
 const PageDashboard = (function() {
   const __PANEL_ID = 'panel-dashboard';
   const __$ = (sel) => document.querySelector('#' + __PANEL_ID + ' ' + sel);
@@ -4220,7 +4248,7 @@ function buildDealerList() {
     s.revenue += parseFloat(row['상품금액']) || 0;
     s.orders++;
   }
-  allDealers = [...dealerStats.values()].sort((a, b) => b.revenue - a.revenue);
+  allDealers = [...dealerStats.values()].filter(d => window.isRegisteredDealerName(d.name)).sort((a, b) => b.revenue - a.revenue);
   selectedDealers = new Set(allDealers.map(d => d.name));
   renderDealerList();
 }
@@ -4603,6 +4631,7 @@ function setupDealerFilter() {
     document.getElementById('header-meta').textContent = `${formatNumber(allOrders.length)}건 누적`;
     document.getElementById('dash-main-content').style.display = 'block';
     
+    await window.loadDealerWhitelist();
     buildDealerList();
     updateDealerTrigger();
     setupDealerFilter();
@@ -4727,7 +4756,7 @@ function buildDealerList() {
     if (!dealerStats.has(d)) dealerStats.set(d, { name: d, revenue: 0 });
     dealerStats.get(d).revenue += parseFloat(row['상품금액']) || 0;
   }
-  allDealers = [...dealerStats.values()].sort((a, b) => b.revenue - a.revenue);
+  allDealers = [...dealerStats.values()].filter(d => window.isRegisteredDealerName(d.name)).sort((a, b) => b.revenue - a.revenue);
   selectedDealers = new Set(allDealers.map(d => d.name));
   renderDealerList();
 }
@@ -5161,6 +5190,7 @@ function setupDealerFilter() {
     document.getElementById('header-meta').textContent = `${formatNumber(allOrders.length)}건 누적`;
     document.getElementById('best-main-content').style.display = 'block';
     
+    await window.loadDealerWhitelist();
     buildDealerList();
     updateDealerTrigger();
     setupDealerFilter();
@@ -5338,7 +5368,7 @@ function buildDealerList() {
     if (!dealerStats.has(d)) dealerStats.set(d, { name: d, revenue: 0 });
     dealerStats.get(d).revenue += parseFloat(row['상품금액']) || 0;
   }
-  allDealers = [...dealerStats.values()].sort((a, b) => b.revenue - a.revenue);
+  allDealers = [...dealerStats.values()].filter(d => window.isRegisteredDealerName(d.name)).sort((a, b) => b.revenue - a.revenue);
   selectedDealers = new Set(allDealers.map(d => d.name));
   renderDealerList();
 }
@@ -6029,6 +6059,7 @@ function recompute() {
     document.getElementById('header-meta').textContent = `${formatNumber(allOrders.length)}건 누적`;
     document.getElementById('comp-main-content').style.display = 'block';
     
+    await window.loadDealerWhitelist();
     buildDealerList();
     updateDealerTrigger();
     setupDealerFilter();
@@ -6118,7 +6149,7 @@ function recompute() {
   }
   function populateDealers(){
     const sel=document.getElementById('cycle-dealer'); if(!sel||sel.__filled) return;
-    const set=new Set(); rows.forEach(r=>{ if(r.dealer) set.add(r.dealer); });
+    const set=new Set(); rows.forEach(r=>{ if(r.dealer && window.isRegisteredDealerName(r.dealer)) set.add(r.dealer); });
     const names=[...set].sort((a,b)=>a.localeCompare(b,'ko'));
     sel.innerHTML='<option value="all">전체 대리점</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
     sel.__filled=1;
@@ -6177,6 +6208,7 @@ function recompute() {
   async function boot(retry){
     retry=retry||0;
     try{
+      await window.loadDealerWhitelist();
       await compute();
       if(rows.length===0 && retry<12){ setTimeout(()=>boot(retry+1),1000); return; }
       render();
@@ -6319,6 +6351,7 @@ const PageSales = (function(){
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
   async function load(){
+    await window.loadDealerWhitelist();
     if(rows) return;
     const db=await openDB(); rows=[];
     await new Promise((res,rej)=>{
@@ -6337,7 +6370,7 @@ const PageSales = (function(){
       req.onerror=()=>rej(req.error);
     });
     db.close();
-    const ds=new Set(); rows.forEach(r=>{ if(r.dealer) ds.add(r.dealer); });
+    const ds=new Set(); rows.forEach(r=>{ if(r.dealer && window.isRegisteredDealerName(r.dealer)) ds.add(r.dealer); });
     dealers=[...ds].sort((a,b)=>a.localeCompare(b,'ko'));
   }
 
