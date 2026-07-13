@@ -2447,66 +2447,75 @@ const PageBehavior = (function(){
   }
   function normHost(h){ return String(h||'').replace(/^www\./,'').toLowerCase(); }
 
+  async function fetchAll(table, orderCol){
+    // Supabase 요청당 최대 1000행 제한 대응: 빈 응답까지 페이지 반복
+    const sb=window.__sb; const out=[];
+    for(let from=0;;){
+      let q=sb.from(table).select('*').range(from, from+999);
+      if(orderCol) q=q.order(orderCol,{ascending:true});
+      const r=await q;
+      if(r.error){ if(from===0) throw r.error; break; }
+      const d=r.data||[];
+      out.push(...d);
+      if(d.length<1000) break;
+      from+=d.length;
+    }
+    return out;
+  }
   async function loadData(){
     const sb=window.__sb; if(!sb) return false;
+    let dealerRowsRaw=[];
     try{
-      const [ga, dl, pg, it] = await Promise.all([
-        sb.from('ga_daily_metrics').select('*').order('date',{ascending:true}),
-        sb.from('dealers').select('*'),
-        sb.from('ga_page_daily').select('*'),
-        sb.from('ga_item_daily').select('*')
-      ]);
-      if(ga.error||dl.error) return false;
-      gaRows = ga.data||[];
-      pageRows = pg.error ? [] : (pg.data||[]);
-      itemRows = it.error ? [] : (it.data||[]);
       try{
-        const sr = await sb.from('ga_search_daily').select('*');
-        searchRows = sr.error ? [] : (sr.data||[]);
+        const [ga, dl, pg, it] = await Promise.all([
+          fetchAll('ga_daily_metrics','date'),
+          fetchAll('dealers'),
+          fetchAll('ga_page_daily'),
+          fetchAll('ga_item_daily')
+        ]);
+        gaRows = ga; dealerRowsRaw = dl; pageRows = pg; itemRows = it;
+      }catch(e){ return false; }
+      try{
+        searchRows = await fetchAll('ga_search_daily');
       }catch(e){ searchRows=[]; }
       try{
-        const vr = await sb.from('ga_visitor_daily').select('*');
-        visitorRows = vr.error ? [] : (vr.data||[]);
+        visitorRows = await fetchAll('ga_visitor_daily');
       }catch(e){ visitorRows=[]; }
       try{
-        const df = await sb.from('dealer_first_order').select('*');
-        dealerFirst = df.error ? [] : (df.data||[]);
+        dealerFirst = await fetchAll('dealer_first_order');
       }catch(e){ dealerFirst=[]; }
       try{
-        const bi = await sb.from('ga_item_bq_daily').select('*');
-        bqItemRows = bi.error ? [] : (bi.data||[]);
+        bqItemRows = await fetchAll('ga_item_bq_daily');
       }catch(e){ bqItemRows=[]; }
       try{
-        const ct = await sb.from('ga_category_daily').select('*');
-        catRows = ct.error ? [] : (ct.data||[]);
+        catRows = await fetchAll('ga_category_daily');
       }catch(e){ catRows=[]; }
       try{
-        const ic = await sb.from('ga_item_cat_daily').select('*');
-        itemCatRows = ic.error ? [] : (ic.data||[]);
+        itemCatRows = await fetchAll('ga_item_cat_daily');
       }catch(e){ itemCatRows=[]; }
       try{
-        const scr = await sb.from('ga_scroll_daily').select('*');
-        scrollRows = scr.error ? [] : (scr.data||[]);
+        scrollRows = await fetchAll('ga_scroll_daily');
       }catch(e){ scrollRows=[]; }
       try{
-        const sf = await sb.from('ga_signup_funnel').select('*');
-        signupRows = sf.error ? [] : (sf.data||[]);
+        signupRows = await fetchAll('ga_signup_funnel');
       }catch(e){ signupRows=[]; }
       try{
-        const ck = await sb.from('ga_click_daily').select('*');
-        clickRows = ck.error ? [] : (ck.data||[]);
+        clickRows = await fetchAll('ga_click_daily');
       }catch(e){ clickRows=[]; }
       try{
-        const mi = await sb.from('ga_member_item_daily').select('*');
-        memberRows = mi.error ? [] : (mi.data||[]);
+        memberRows = await fetchAll('ga_member_item_daily');
       }catch(e){ memberRows=[]; }
       try{
-        const mm = await sb.from('member_hash_map').select('*');
-        memberMap = {};
-        (mm.error ? [] : (mm.data||[])).forEach(m=>{ memberMap[m.user_hash]=m; });
+        // 대조표(3만+행)는 통째로 받지 않고, 화면에 등장하는 해시만 선별 조회
+        memberMap={};
+        const hs=[...new Set(memberRows.map(r=>r.user_hash).filter(Boolean))];
+        for(let i=0;i<hs.length;i+=150){
+          const mm = await sb.from('member_hash_map').select('*').in('user_hash', hs.slice(i,i+150));
+          if(!mm.error) (mm.data||[]).forEach(m=>{ memberMap[m.user_hash]=m; });
+        }
       }catch(e){ memberMap={}; }
       hostToDealer={}; const nmeSet=new Set();
-      (dl.data||[]).forEach(d=>{
+      (dealerRowsRaw||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
         hostToDealer[normHost(d.hostname)]=nm;
         nmeSet.add(nm);
