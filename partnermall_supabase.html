@@ -1464,7 +1464,7 @@ body {
     <div class="section-header">
       <div class="section-title">
         파트너몰 API 동기화
-        <span class="section-title-count">9개 몰 → Supabase 서버 적재 · 관리자 전용</span>
+        <span class="section-title-count">9개 몰 → Supabase 서버 적재 · 관리자 전용 · <b id="api-sync-ver">v3.2</b></span>
       </div>
       <div class="section-actions">
         <button class="btn-secondary" id="btn-api-config">⚙ 연결 설정</button>
@@ -6857,29 +6857,47 @@ const PageSales = (function(){
     return res.json();
   }
 
-  // ---- orders 테이블의 숫자형 컬럼 목록을 서버 스키마에서 읽어옴 ----
+  // ---- orders 테이블의 숫자형 컬럼 목록 판별 ----
   // (숫자형 컬럼에 "16776, 14568" 같은 문자열이 들어가면 DB 오류가 나므로 사전 정제용)
+  // 방법 1: 이미 저장된 행 샘플에서 값 타입으로 판별 (가장 확실)
+  // 방법 2: OpenAPI 스키마 조회 (테이블이 비어있을 때 대비)
   async function loadNumericCols(sb) {
+    const set = new Set();
+    // 방법 1: 저장된 행 50개 샘플링 — 숫자로 내려오는 컬럼 = 숫자형
+    try {
+      const { data } = await sb.from('orders').select('*').order('id', { ascending: true }).limit(50);
+      if (data && data.length) {
+        for (const row of data) {
+          for (const k in row) {
+            if (typeof row[k] === 'number') set.add(k);
+          }
+        }
+      }
+    } catch (e) { /* 무시 */ }
+    // 방법 2: OpenAPI 스키마 (샘플에 null만 있던 컬럼 보완)
     try {
       const { data: { session } } = await sb.auth.getSession();
-      const res = await fetch(sb.supabaseUrl + '/rest/v1/', {
+      const baseUrl = sb.supabaseUrl || sb.restUrl && sb.restUrl.replace(/\/rest\/v1\/?$/, '') || 'https://ttgrbigijmnzpfutzuss.supabase.co';
+      const res = await fetch(baseUrl + '/rest/v1/', {
         headers: {
-          'apikey': sb.supabaseKey,
-          'Authorization': 'Bearer ' + (session ? session.access_token : sb.supabaseKey),
+          'apikey': sb.supabaseKey || 'sb_publishable_TMYJCTJbHqrnjeFSxKovIw_DwrX-lXg',
+          'Authorization': 'Bearer ' + (session ? session.access_token : ''),
+          'Accept': 'application/openapi+json, application/json',
         },
       });
-      if (!res.ok) return null;
-      const spec = await res.json();
-      const props = spec && spec.definitions && spec.definitions.orders && spec.definitions.orders.properties;
-      if (!props) return null;
-      const numFormats = ['bigint', 'integer', 'smallint', 'numeric', 'real', 'double'];
-      const set = new Set();
-      for (const col in props) {
-        const f = String(props[col].format || '');
-        if (numFormats.some(nf => f.indexOf(nf) === 0)) set.add(col);
+      if (res.ok) {
+        const spec = await res.json();
+        const props = spec && spec.definitions && spec.definitions.orders && spec.definitions.orders.properties;
+        if (props) {
+          const numFormats = ['bigint', 'integer', 'smallint', 'numeric', 'real', 'double'];
+          for (const col in props) {
+            const f = String(props[col].format || '');
+            if (numFormats.some(nf => f.indexOf(nf) === 0)) set.add(col);
+          }
+        }
       }
-      return set.size ? set : null;
-    } catch (e) { return null; }
+    } catch (e) { /* 무시 */ }
+    return set.size ? set : null;
   }
 
   // 숫자형 컬럼: 콤마 제거 후 첫 번째 숫자만 추출, 숫자가 없으면 null
@@ -6928,6 +6946,10 @@ const PageSales = (function(){
     try {
       progressText.textContent = '테이블 스키마 확인 중...';
       const numericCols = await loadNumericCols(sb);
+      progressText.textContent = numericCols
+        ? '숫자형 컬럼 ' + numericCols.size + '개 인식 — 수집 시작'
+        : '⚠ 스키마 인식 실패 — 기본 정제로 진행';
+      await new Promise(res => setTimeout(res, 600));
       const results = [];
       let grandRows = 0, grandNew = 0;
 
