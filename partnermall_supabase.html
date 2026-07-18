@@ -1197,6 +1197,29 @@ body {
 }
 .page-companies to { transform: rotate(360deg); }
 .page-companies footer { text-align: center; padding: 24px; font-size: 12px; color: var(--text-mute); }
+
+/* === 파트너몰 API 동기화 (Supabase 적재판) === */
+.page-data .api-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.page-data .api-label { font-size: 12px; color: var(--text-sub); font-weight: 500; min-width: 90px; }
+.page-data .api-input {
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px;
+  font-size: 13px; font-family: inherit; width: 340px;
+}
+.page-data .api-input:focus { outline: none; border-color: var(--primary); }
+.page-data .mall-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.page-data .mall-check {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 14px; padding: 5px 12px;
+  cursor: pointer; background: white; transition: all 0.15s;
+}
+.page-data .mall-check input { cursor: pointer; }
+.page-data .mall-check.checked { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.page-data .api-progress { display: none; margin-top: 14px; }
+.page-data .api-progress.show { display: block; }
+.page-data .api-summary { margin-top: 12px; font-size: 13px; color: var(--text-sub); }
+.page-data .api-summary table { border-collapse: collapse; margin-top: 6px; }
+.page-data .api-summary td, .page-data .api-summary th { border: 1px solid var(--border); padding: 4px 10px; font-size: 12px; }
+.page-data .api-summary th { background: var(--bg-soft); font-weight: 500; }
 </style>
 </head>
 <body>
@@ -1434,6 +1457,51 @@ body {
       <button class="btn-secondary" id="report-xlsx">📊 엑셀 요약</button>
       <button class="btn-secondary" id="report-pdf">📄 PDF 리포트</button>
     </div>
+  </div>
+
+  <!-- 파트너몰 API 동기화 → Supabase (관리자 전용, 로그인 후 role 확인되면 표시) -->
+  <div class="section" id="api-sync-section" style="display:none;">
+    <div class="section-header">
+      <div class="section-title">
+        파트너몰 API 동기화
+        <span class="section-title-count">9개 몰 → Supabase 서버 적재 · 관리자 전용</span>
+      </div>
+      <div class="section-actions">
+        <button class="btn-secondary" id="btn-api-config">⚙ 연결 설정</button>
+      </div>
+    </div>
+
+    <div id="api-config-box" style="display:none; background:var(--bg-soft); border-radius:8px; padding:16px 20px; margin-bottom:16px;">
+      <div class="api-row">
+        <span class="api-label">Worker URL</span>
+        <input class="api-input" id="api-url" placeholder="https://partnermall-api.xxxx.workers.dev">
+      </div>
+      <div class="api-row">
+        <span class="api-label">접근 토큰</span>
+        <input class="api-input" id="api-token" type="password" placeholder="ACCESS_TOKEN">
+        <button class="btn-secondary" id="btn-api-save">저장</button>
+      </div>
+      <div style="font-size:11px; color:var(--text-mute);">연결 정보는 이 브라우저(IndexedDB)에만 저장됩니다. 수집된 데이터는 Supabase 서버에 적재되어 모든 계정에 공유됩니다.</div>
+    </div>
+
+    <div class="api-row">
+      <span class="api-label">수집할 몰</span>
+      <div class="mall-checks" id="mall-checks"></div>
+    </div>
+    <div class="api-row" style="margin-top:4px;">
+      <button class="upload-btn" id="btn-api-quick">⚡ 빠른 동기화 (신규 주문만)</button>
+      <button class="btn-secondary" id="btn-api-full" style="padding:11px 20px;">전체 동기화 (과거 상태 변경까지 반영)</button>
+    </div>
+    <div style="font-size:11px; color:var(--text-mute); margin-top:2px;">
+      빠른 동기화: 최신 주문부터 수집하다 기존 데이터를 만나면 중단 (평소 확인용 · 매일 새벽엔 Worker가 자동 수집) ·
+      전체 동기화: 전 기간 재수집, 오래된 주문의 취소/완료 상태 변경까지 반영 (최초 1회 및 월 1회 권장, 10~20분 소요)
+    </div>
+
+    <div class="api-progress" id="api-progress">
+      <div class="progress-bar"><div class="progress-bar-fill" id="api-progress-fill"></div></div>
+      <div class="processing-status" id="api-progress-text" style="margin-top:6px;">준비 중...</div>
+    </div>
+    <div class="api-summary" id="api-summary"></div>
   </div>
 
   <!-- 첫 사용시 드롭 영역 -->
@@ -6661,6 +6729,324 @@ const PageSales = (function(){
     }
   }
   return { init };
+})();
+</script>
+
+<script>
+// ============================================================
+// 파트너몰 API 동기화 → Supabase 적재 (관리자 전용)
+// - 수집: Cloudflare Worker 프록시 경유 (X-Access-Token)
+// - 적재: Supabase orders 테이블 upsert (onConflict: _key)
+// - _key = 주문번호__상품코드__행번호(3자리) — Worker Cron과 동일 로직
+// ============================================================
+(function(){
+  const API_MALLS = [
+    { code: 'b2bmall',      label: '대표몰(링커)', def: true },
+    { code: 'neosm',        label: '네오스엠', def: true },
+    { code: 'samho',        label: '삼호에스엔씨', def: true },
+    { code: 'tnahk',        label: '한국티엔에이', def: true },
+    { code: 'changsung',    label: '창성이스코', def: true },
+    { code: 'hankook',      label: '한국물산', def: true },
+    { code: 'hanshin',      label: '한신그레이스', def: true },
+    { code: 'hyundaibrush', label: '현대브러쉬', def: true },
+    { code: 'account',      label: 'account (대표몰 중복)', def: false },
+  ];
+
+  const API_FIELD_MAP = {
+    order_no: '주문번호', order_year: '주문일시(년)', order_month: '주문일시(월)',
+    order_day: '주문일시(일)', order_hour: '주문일시(시간)',
+    order_merchant: '주문가맹점', merchant_code: '가맹점코드',
+    payment_account: '결제계좌', depositor: '입금인', courier: '택배사',
+    tracking_no: '운송장번호', status: '처리상태', cancel_reason: '주문취소사유',
+    admin_memo: '관리자메모', is_mobile: '모바일여부',
+    user_id: '주문자ID', user_name: '주문자명', user_company_name: '주문자업체명',
+    user_erp_code: '주문자ERP코드', user_type: '주문자회원구분', user_biz_type: '주문자 기업구분',
+    agency_grade: '대리점회원등급', user_email: '주문자이메일', user_phone: '주문자 전화번호',
+    user_mobile: '주문자휴대폰', user_zipcode: '주문자우편번호', user_address: '주문자주소',
+    user_biz_no: '주문자사업자번호', user_ip: '주문자 ip', user_domain: '주문자도메인',
+    receiver_name: '수취인명', receiver_phone: '수취인전화번호', receiver_mobile: '수취인휴대폰',
+    receiver_zipcode: '수취인우편번호', receiver_address: '수취인주소', delivery_request: '요청사항',
+    category_large: '대분류', category_medium: '중분류', category_small: '소분류',
+    product_name: '제품명', option_name: '옵션명', hq_product_code: '본사상품코드',
+    product_code: '상품코드', sku: 'SKU', product_erp_code: '상품ERP코드',
+    sales_unit: '판매단위', unit_price: '제품단가', quantity: '수량',
+    product_amount: '상품금액', vat_amount: '부가세', sub_total: '상품금액+부가세',
+    is_vat_enabled: 'VAT여부', total_amount: '총금액', total_deposit_amount: '총입금액',
+    payment_method: '결제방법', coupon: '쿠폰', coupon_amount_list: '쿠폰금액리스트',
+    coupon_used_amount: '쿠폰사용액', order_coupon_used_amount: '주문쿠폰사용액',
+    points_used: '포인트사용액', shipping_fee: '배송비', processing_fee: '가공비',
+    remaining_points: '잔여포인트', email_subscribed: '이메일수신', sms_subscribed: 'SMS수신',
+  };
+  const API_NUM_FIELDS = ['주문일시(년)', '주문일시(월)', '주문일시(일)', '제품단가', '수량',
+    '상품금액', '부가세', '상품금액+부가세', '총금액', '총입금액', '쿠폰사용액',
+    '주문쿠폰사용액', '포인트사용액', '배송비', '가공비', '잔여포인트'];
+
+  const $ = id => document.getElementById(id);
+
+  function toast(msg, type) {
+    const container = $('toast-container');
+    if (!container) { console.log('[API동기화]', msg); return; }
+    const t = document.createElement('div');
+    t.className = 'toast' + (type === 'error' ? ' error' : type === 'warn' ? ' warn' : '');
+    t.textContent = msg;
+    container.appendChild(t);
+    setTimeout(() => {
+      t.style.transition = 'opacity 0.3s'; t.style.opacity = '0';
+      setTimeout(() => t.remove(), 300);
+    }, 3500);
+  }
+
+  // ---- 연결 설정 저장 (IndexedDB meta 스토어) ----
+  function openMetaDB() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('PartnermallAnalyzer', 1);
+      r.onerror = () => rej(r.error);
+      r.onsuccess = () => res(r.result);
+      r.onupgradeneeded = e => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains('orders')) {
+          const s = d.createObjectStore('orders', { keyPath: '_key' });
+          s.createIndex('orderNo', '주문번호'); s.createIndex('yearMonth', '_yearMonth'); s.createIndex('company', '주문자업체명');
+        }
+        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
+      };
+    });
+  }
+  async function getMeta(key) {
+    const db = await openMetaDB();
+    return new Promise((res, rej) => {
+      const req = db.transaction('meta').objectStore('meta').get(key);
+      req.onsuccess = () => { db.close(); res(req.result ? req.result.value : null); };
+      req.onerror = () => { db.close(); rej(req.error); };
+    });
+  }
+  async function setMeta(key, value) {
+    const db = await openMetaDB();
+    return new Promise((res, rej) => {
+      const t = db.transaction('meta', 'readwrite');
+      t.objectStore('meta').put({ key, value });
+      t.oncomplete = () => { db.close(); res(); };
+      t.onerror = () => { db.close(); rej(t.error); };
+    });
+  }
+
+  // ---- 행 변환 ----
+  function mapApiRow(apiRow) {
+    const row = {};
+    for (const en in API_FIELD_MAP) {
+      const v = apiRow[en];
+      row[API_FIELD_MAP[en]] = (v === undefined) ? null : v;
+    }
+    for (const f of API_NUM_FIELDS) {
+      const v = row[f];
+      if (v !== null && v !== '') {
+        const n = parseFloat(String(v).replace(/,/g, ''));
+        if (!isNaN(n)) row[f] = n;
+      }
+    }
+    return row;
+  }
+
+  async function apiCall(cfg, params) {
+    const res = await fetch(cfg.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Access-Token': cfg.token },
+      body: JSON.stringify(params),
+    });
+    return res.json();
+  }
+
+  let apiSyncRunning = false;
+
+  async function apiSync(mode) { // 'quick' | 'full'
+    if (apiSyncRunning) { toast('이미 동기화가 진행 중입니다', 'warn'); return; }
+    const sb = window.__sb;
+    if (!sb) { toast('Supabase 연결이 준비되지 않았습니다. 새로고침 해주세요.', 'error'); return; }
+    if (window.__sbRole !== 'admin') { toast('관리자 계정만 동기화할 수 있습니다', 'error'); return; }
+
+    const cfg = {
+      url: ($('api-url').value || '').trim().replace(/\/$/, ''),
+      token: ($('api-token').value || '').trim(),
+    };
+    if (!cfg.url || !cfg.token) {
+      $('api-config-box').style.display = 'block';
+      toast('연결 설정(Worker URL·접근 토큰)을 먼저 입력하세요', 'warn');
+      return;
+    }
+    const malls = API_MALLS.filter(m => {
+      const cb = document.querySelector('#mall-checks input[value="' + m.code + '"]');
+      return cb && cb.checked;
+    });
+    if (malls.length === 0) { toast('수집할 몰을 선택하세요', 'warn'); return; }
+
+    apiSyncRunning = true;
+    const progress = $('api-progress'), progressFill = $('api-progress-fill'),
+          progressText = $('api-progress-text'), summaryEl = $('api-summary');
+    progress.classList.add('show');
+    progressFill.style.width = '0%';
+    summaryEl.innerHTML = '';
+
+    try {
+      const results = [];
+      let grandRows = 0, grandNew = 0;
+
+      for (let mi = 0; mi < malls.length; mi++) {
+        const mall = malls[mi];
+        const stat = { label: mall.label, pages: 0, rows: 0, newCount: 0, error: null };
+        const seqCounter = new Map();
+        let page = 1, stale = 0;
+
+        while (true) {
+          progressFill.style.width = Math.round(mi / malls.length * 100) + '%';
+          progressText.textContent = '[' + (mi + 1) + '/' + malls.length + '] ' + mall.label +
+            ' — ' + page + '페이지 수집→적재 중 (누적 ' + stat.rows.toLocaleString() + '행)';
+
+          let r;
+          try {
+            r = await apiCall(cfg, { mall: mall.code, page: page, pageRow: 100, time_sort: 'desc' });
+          } catch (err) { stat.error = '네트워크 오류: ' + err.message; break; }
+          if (!r || r.status !== 'success') { stat.error = (r && r.msg) ? r.msg : '알 수 없는 오류'; break; }
+          const data = r.data || [];
+          if (data.length === 0) break;
+
+          // 행 변환 + _key 생성
+          const rows = [];
+          for (const apiRow of data) {
+            const row = mapApiRow(apiRow);
+            const orderNo = row['주문번호'];
+            if (!orderNo) continue;
+            const productCode = row['상품코드'] || row['SKU'] || row['본사상품코드'] || '';
+            const comboKey = String(orderNo) + '__' + String(productCode);
+            const seq = (seqCounter.get(comboKey) || 0) + 1;
+            seqCounter.set(comboKey, seq);
+            row._key = comboKey + '__' + String(seq).padStart(3, '0');
+            row._mall = mall.code;
+            rows.push(row);
+          }
+
+          stat.pages++;
+          stat.rows += rows.length;
+
+          // 빠른 동기화: 이 페이지의 키 중 서버에 이미 있는 것 확인
+          let newInPage = rows.length;
+          if (mode === 'quick' && rows.length > 0) {
+            const keys = rows.map(r2 => r2._key);
+            const { data: exist, error: exErr } = await sb.from('orders').select('_key').in('_key', keys);
+            if (!exErr && exist) {
+              const existSet = new Set(exist.map(e => e._key));
+              newInPage = keys.filter(k => !existSet.has(k)).length;
+            }
+            stat.newCount += newInPage;
+          }
+
+          // Supabase 적재 (upsert — 있으면 갱신, 없으면 추가)
+          if (rows.length > 0) {
+            const { error: upErr } = await sb.from('orders').upsert(rows, { onConflict: '_key' });
+            if (upErr) { stat.error = '적재 실패: ' + upErr.message; break; }
+          }
+
+          if (data.length < 100) break; // 마지막 페이지
+          if (mode === 'quick') {
+            if (newInPage === 0) { stale++; if (stale >= 2) break; }
+            else stale = 0;
+          }
+          page++;
+          await new Promise(res => setTimeout(res, 100)); // 서버 부하 완화
+        }
+
+        grandRows += stat.rows;
+        grandNew += stat.newCount;
+        results.push(stat);
+      }
+
+      progressFill.style.width = '100%';
+      progressText.textContent = '동기화 완료 — Supabase 서버에 적재되었습니다';
+
+      let html = '<table><tr><th>몰</th><th>적재 행</th>' + (results.some(s => s.newCount) ? '<th>신규</th>' : '') +
+        '<th>페이지</th><th>비고</th></tr>';
+      for (const s of results) {
+        html += '<tr><td>' + s.label + '</td><td>' + s.rows.toLocaleString() + '</td>' +
+          (results.some(x => x.newCount) ? '<td>' + s.newCount.toLocaleString() + '</td>' : '') +
+          '<td>' + s.pages + '</td><td>' + (s.error ? '⚠ ' + s.error : '✓') + '</td></tr>';
+      }
+      html += '</table>';
+      html += '<div style="margin-top:10px;"><button class="upload-btn" id="btn-api-reload">↻ 새 데이터로 화면 새로고침</button>' +
+        '<span style="font-size:11px; color:var(--text-mute); margin-left:8px;">모든 계정은 다음 로그인/새로고침 때 자동 반영됩니다</span></div>';
+      summaryEl.innerHTML = html;
+      $('btn-api-reload').addEventListener('click', () => {
+        sessionStorage.removeItem('sb_loaded');
+        location.reload();
+      });
+
+      await setMeta('lastApiSync', Date.now());
+      toast('API 동기화 완료 — ' + grandRows.toLocaleString() + '행 적재' + (grandNew ? ' (신규 ' + grandNew.toLocaleString() + ')' : ''));
+    } catch (err) {
+      console.error(err);
+      toast('동기화 실패: ' + err.message, 'error');
+      progressText.textContent = '오류: ' + err.message;
+    } finally {
+      apiSyncRunning = false;
+      setTimeout(() => progress.classList.remove('show'), 3000);
+    }
+  }
+
+  // ---- UI 초기화 ----
+  function renderMallChecks() {
+    const box = $('mall-checks');
+    box.innerHTML = '';
+    for (const m of API_MALLS) {
+      const label = document.createElement('label');
+      label.className = 'mall-check' + (m.def ? ' checked' : '');
+      label.innerHTML = '<input type="checkbox" value="' + m.code + '"' + (m.def ? ' checked' : '') + '> ' + m.label;
+      label.querySelector('input').addEventListener('change', (e) => {
+        label.classList.toggle('checked', e.target.checked);
+      });
+      box.appendChild(label);
+    }
+  }
+
+  async function initApiSyncUI() {
+    renderMallChecks();
+    try {
+      const saved = await getMeta('apiConfig');
+      if (saved && saved.url) {
+        $('api-url').value = saved.url;
+        $('api-token').value = saved.token || '';
+      } else {
+        $('api-config-box').style.display = 'block';
+      }
+    } catch (e) { /* 설정 없음 */ }
+
+    $('btn-api-config').addEventListener('click', () => {
+      const box = $('api-config-box');
+      box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+    });
+    $('btn-api-save').addEventListener('click', async () => {
+      const url = ($('api-url').value || '').trim().replace(/\/$/, '');
+      const token = ($('api-token').value || '').trim();
+      if (!url || !token) { toast('URL과 토큰을 모두 입력하세요', 'warn'); return; }
+      try {
+        await setMeta('apiConfig', { url, token });
+        $('api-url').value = url;
+        toast('연결 설정이 저장되었습니다');
+        $('api-config-box').style.display = 'none';
+      } catch (e) { toast('저장 실패: ' + e.message, 'error'); }
+    });
+    $('btn-api-quick').addEventListener('click', () => apiSync('quick'));
+    $('btn-api-full').addEventListener('click', () => apiSync('full'));
+  }
+
+  // 관리자 로그인 확인 후 섹션 표시 (로그인 게이트가 window.__sbRole 설정)
+  let uiReady = false;
+  const roleWatch = setInterval(() => {
+    if (window.__sbRole === undefined || window.__sbRole === null) return;
+    clearInterval(roleWatch);
+    if (window.__sbRole === 'admin') {
+      const sec = $('api-sync-section');
+      if (sec) sec.style.display = '';
+      if (!uiReady) { uiReady = true; initApiSyncUI(); }
+    }
+  }, 400);
 })();
 </script>
 </body>
