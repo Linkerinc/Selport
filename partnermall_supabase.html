@@ -6857,6 +6857,44 @@ const PageSales = (function(){
     return res.json();
   }
 
+  // ---- orders 테이블의 숫자형 컬럼 목록을 서버 스키마에서 읽어옴 ----
+  // (숫자형 컬럼에 "16776, 14568" 같은 문자열이 들어가면 DB 오류가 나므로 사전 정제용)
+  async function loadNumericCols(sb) {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch(sb.supabaseUrl + '/rest/v1/', {
+        headers: {
+          'apikey': sb.supabaseKey,
+          'Authorization': 'Bearer ' + (session ? session.access_token : sb.supabaseKey),
+        },
+      });
+      if (!res.ok) return null;
+      const spec = await res.json();
+      const props = spec && spec.definitions && spec.definitions.orders && spec.definitions.orders.properties;
+      if (!props) return null;
+      const numFormats = ['bigint', 'integer', 'smallint', 'numeric', 'real', 'double'];
+      const set = new Set();
+      for (const col in props) {
+        const f = String(props[col].format || '');
+        if (numFormats.some(nf => f.indexOf(nf) === 0)) set.add(col);
+      }
+      return set.size ? set : null;
+    } catch (e) { return null; }
+  }
+
+  // 숫자형 컬럼: 콤마 제거 후 첫 번째 숫자만 추출, 숫자가 없으면 null
+  function coerceNumeric(row, numericCols) {
+    if (!numericCols) return row;
+    for (const k in row) {
+      const v = row[k];
+      if (numericCols.has(k) && v !== null && typeof v !== 'number') {
+        const m = String(v).replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+        row[k] = m ? parseFloat(m[0]) : null;
+      }
+    }
+    return row;
+  }
+
   let apiSyncRunning = false;
 
   async function apiSync(mode) { // 'quick' | 'full'
@@ -6888,6 +6926,8 @@ const PageSales = (function(){
     summaryEl.innerHTML = '';
 
     try {
+      progressText.textContent = '테이블 스키마 확인 중...';
+      const numericCols = await loadNumericCols(sb);
       const results = [];
       let grandRows = 0, grandNew = 0;
 
@@ -6922,7 +6962,7 @@ const PageSales = (function(){
             seqCounter.set(comboKey, seq);
             row._key = comboKey + '__' + String(seq).padStart(3, '0');
             row._mall = mall.code;
-            rows.push(row);
+            rows.push(coerceNumeric(row, numericCols));
           }
 
           stat.pages++;
