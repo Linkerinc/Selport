@@ -6835,7 +6835,8 @@ const PageSales = (function(){
     const row = {};
     for (const en in API_FIELD_MAP) {
       const v = apiRow[en];
-      row[API_FIELD_MAP[en]] = (v === undefined) ? null : v;
+      // 빈 문자열은 null로 (숫자형 컬럼에 "" 들어가면 DB 오류)
+      row[API_FIELD_MAP[en]] = (v === undefined || v === '') ? null : v;
     }
     for (const f of API_NUM_FIELDS) {
       const v = row[f];
