@@ -1262,38 +1262,71 @@ body {
     // 권한 확인: 대리점(dealer) 계정이면 본인 대리점 주문만 내려받음
     let myDealer=null;
     try{ const me=await getMyRole(); if(me.role==='dealer' && me.dealer_name) myDealer=me.dealer_name; }catch(e){}
+
+    const db=await openDB();
+    const metaGet=(key)=>new Promise((res)=>{ try{ const r=db.transaction('meta').objectStore('meta').get(key); r.onsuccess=()=>res(r.result?r.result.value:null); r.onerror=()=>res(null); }catch(e){ res(null); } });
+    const metaSet=(key,value)=>new Promise((res)=>{ try{ const t=db.transaction('meta','readwrite'); t.objectStore('meta').put({key,value}); t.oncomplete=()=>res(); t.onerror=()=>res(); }catch(e){ res(); } });
+    const localCount=await new Promise((res)=>{ try{ const r=db.transaction('orders').objectStore('orders').count(); r.onsuccess=()=>res(r.result||0); r.onerror=()=>res(0); }catch(e){ res(0); } });
+
+    // 증분 로딩 조건: 이 브라우저에 이전 데이터 + 워터마크가 있고, 대리점 필터도 같을 때
+    const wm=await metaGet('sbSyncWatermark');
+    const wmDealer=await metaGet('sbSyncDealer');
+    const incremental = !!(wm && localCount>0 && (wmDealer||null)===(myDealer||null));
+
+    const PAGE_TARGET=5000, CONC=3; // Supabase Max Rows가 1000이면 아래에서 자동으로 1000으로 낮춤
+    function buildQuery(){
+      let q=sb.from('orders').select('*');
+      if(myDealer) q=q.eq('주문가맹점',myDealer);
+      if(incremental) q=q.gte('_synced_at', wm);
+      return q;
+    }
     let total=0;
-    try{ let q=sb.from('orders').select('id',{count:'exact',head:true}); if(myDealer) q=q.eq('주문가맹점',myDealer); const c=await q; total=c.count||0; }catch(e){}
-    const PAGE=1000, CONC=6;
-    const results=[]; let loaded=0, pageIdx=0, endReached=false;
-    async function fetchPageData(i){
+    try{
+      let q=sb.from('orders').select('id',{count:'exact',head:true});
+      if(myDealer) q=q.eq('주문가맹점',myDealer);
+      if(incremental) q=q.gte('_synced_at', wm);
+      const c=await q; total=c.count||0;
+    }catch(e){}
+    prog.textContent = incremental ? ('변경분 확인 중… (약 '+total.toLocaleString()+'건)') : '전체 데이터 내려받는 중…';
+
+    const results=[]; let loaded=0;
+    async function fetchRange(from,size){
       let attempt=0;
       while(true){
         attempt++;
-        let q=sb.from('orders').select('*').order('id',{ascending:true}).range(i*PAGE,i*PAGE+PAGE-1);
-        if(myDealer) q=q.eq('주문가맹점',myDealer);
-        const { data, error } = await q;
+        const { data, error } = await buildQuery().order('id',{ascending:true}).range(from, from+size-1);
         if(error){ if(attempt<4){ await new Promise(r=>setTimeout(r,600)); continue; } throw error; }
         return data||[];
       }
     }
     try{
-      while(!endReached){
-        const idxs=[]; for(let k=0;k<CONC;k++) idxs.push(pageIdx+k);
-        const batch=await Promise.all(idxs.map(fetchPageData));
-        for(const d of batch){ results.push(d); loaded+=d.length; if(d.length<PAGE) endReached=true; }
-        prog.textContent = total ? (loaded.toLocaleString()+' / '+total.toLocaleString()+' 건') : (loaded.toLocaleString()+' 건');
-        pageIdx+=CONC;
-        if(pageIdx>20000) break;
+      // 첫 청크로 서버 페이지 상한 자동 감지
+      const first=await fetchRange(0, PAGE_TARGET);
+      results.push(first); loaded=first.length;
+      let effPage=0;
+      if(first.length===PAGE_TARGET) effPage=PAGE_TARGET;
+      else if(first.length===1000 && total>1000) effPage=1000; // Max Rows=1000 환경
+      if(effPage){
+        let offset=loaded, done=false;
+        while(!done){
+          const froms=[]; for(let k=0;k<CONC;k++) froms.push(offset+k*effPage);
+          const batch=await Promise.all(froms.map(f=>fetchRange(f,effPage)));
+          for(const d of batch){ results.push(d); loaded+=d.length; if(d.length<effPage) done=true; }
+          prog.textContent=(incremental?'변경분 ':'')+loaded.toLocaleString()+' / '+(total?total.toLocaleString():'?')+' 건';
+          offset+=CONC*effPage;
+          if(offset>2000000) break;
+        }
       }
     }catch(e){ prog.innerHTML='데이터 읽기 오류: '+(e.message||e)+'<br><br><button onclick="location.reload()" style="padding:8px 14px;border-radius:8px;border:0;background:#3b6ef5;color:#fff;cursor:pointer;">다시 시도</button>'; return; }
     prog.textContent='저장하는 중…';
+    let maxSynced=wm||null;
     try{
-      const db=await openDB();
       await new Promise((res,rej)=>{
-        const t=db.transaction('orders','readwrite'); const s=t.objectStore('orders'); s.clear();
+        const t=db.transaction('orders','readwrite'); const s=t.objectStore('orders');
+        if(!incremental) s.clear(); // 증분이면 기존 캐시 유지, 변경분만 덮어씀
         for(const arr of results){ for(const row of (arr||[])){
           const y=row['주문일시(년)'], m=row['주문일시(월)'];
+          if(row._synced_at && (!maxSynced || String(row._synced_at)>String(maxSynced))) maxSynced=row._synced_at;
           row._key=String(row.id);
           row._yearMonth=(y&&m)?(y+'-'+String(m).padStart(2,'0')):'UNKNOWN';
           row._uploadedAt=Date.now();
@@ -1301,6 +1334,8 @@ body {
         }}
         t.oncomplete=()=>res(); t.onerror=()=>rej(t.error);
       });
+      if(maxSynced) await metaSet('sbSyncWatermark', maxSynced);
+      await metaSet('sbSyncDealer', myDealer||null);
       db.close();
     }catch(e){ prog.innerHTML='저장 오류: '+(e.message||e); return; }
     sessionStorage.setItem('sb_loaded','1');
@@ -1464,7 +1499,7 @@ body {
     <div class="section-header">
       <div class="section-title">
         파트너몰 API 동기화
-        <span class="section-title-count">9개 몰 → Supabase 서버 적재 · 관리자 전용 · <b id="api-sync-ver">v3.2</b></span>
+        <span class="section-title-count">9개 몰 → Supabase 서버 적재 · 관리자 전용 · <b id="api-sync-ver">v3.3</b></span>
       </div>
       <div class="section-actions">
         <button class="btn-secondary" id="btn-api-config">⚙ 연결 설정</button>
