@@ -2123,6 +2123,7 @@ body {
         <button data-p="ytd" class="sa-pbtn">올해</button>
         <button data-p="all" class="sa-pbtn on">전체</button>
       </span>
+      <span id="sa-range-sum" style="font-size:12px;font-weight:700;color:var(--primary,#1F4E78);background:#EFF4FA;border:1px solid #D9E1F2;border-radius:6px;padding:5px 11px;">—</span>
       <span style="font-size:11px;color:var(--text-mute,#94a3b8);">· 카테고리별 매출과 주문 내역에 적용됩니다 (기간·연도 비교는 월 단위 지표)</span>
     </div>
     <style>
@@ -7268,6 +7269,14 @@ const PageSales = (function(){
   function renderOrders(reset){
     const tb=document.getElementById('sa-ord-tbody'); if(!tb||!orderRows) return;
     if(reset!==false) ordShown=50;
+    // 선택 기간 합계 칩 (완료 기준 — 대시보드 총매출과 동일 기준)
+    const chip=document.getElementById('sa-range-sum');
+    if(chip&&rows){
+      let cAmt=0; const cOrds=new Set();
+      rows.forEach(r=>{ if((curDealer==='all'||r.dealer===curDealer)&&inRange(r.ymd)){ cAmt+=r.amt; if(r.ord)cOrds.add(r.ord); } });
+      const label=(fromYmd===0&&toYmd===99999999)?'전체 기간':'선택 기간';
+      chip.textContent=label+' 완료 매출 '+won(cAmt)+' · 주문 '+num(cOrds.size)+'건';
+    }
     const q=ordQ.trim();
     const base=orderRows.filter(r=>
       (curDealer==='all'||r.dealer===curDealer) && inRange(r.ymd)
