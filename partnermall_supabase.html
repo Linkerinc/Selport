@@ -1657,6 +1657,8 @@ body {
 <div class="page-panel page-dashboard " id="panel-dashboard" data-page="dashboard">
 <main class="app-main">
 
+  <div id="weekly-briefing" style="display:none;"></div>
+
   <div class="no-data" id="dash-no-data" style="display:none">
     <div class="no-data-icon">📊</div>
     <div class="no-data-title">데이터가 없습니다</div>
@@ -4432,8 +4434,10 @@ function applyFilter() {
   let working = allOrders;
   
   if (from && to) {
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
+    // 'YYYY-MM-DD'를 로컬(한국) 자정으로 파싱 — new Date(문자열)은 UTC 자정(KST 09:00)이 되어
+    // 시작일 당일 주문이 통째로 빠지는 버그가 있었음 (2026-07-21 수정)
+    const fromDate = new Date(from + 'T00:00:00');
+    const toDate = new Date(to + 'T00:00:00');
     toDate.setHours(23, 59, 59);
     working = working.filter(row => {
       const d = rowDate(row);
@@ -4975,8 +4979,9 @@ function applyBasicFilters() {
   let working = allOrders.filter(r => r['처리상태'] === '완료');
   
   if (from && to) {
-    const fromDate = new Date(from);
-    const toDate = new Date(to); toDate.setHours(23, 59, 59);
+    // 로컬 자정 파싱 (시작일 누락 버그 수정 — 2026-07-21)
+    const fromDate = new Date(from + 'T00:00:00');
+    const toDate = new Date(to + 'T00:00:00'); toDate.setHours(23, 59, 59);
     working = working.filter(row => {
       const d = rowDate(row);
       return d && d >= fromDate && d <= toDate;
@@ -7649,6 +7654,61 @@ const PageSales = (function(){
       if (!uiReady) { uiReady = true; initApiSyncUI(); }
     }
   }, 400);
+})();
+</script>
+<script>
+/* ===== 주간 브리핑 카드 (weekly_briefing · 독립 모듈) ===== */
+(function(){
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  function fmtRange(ws,we){
+    function md(d){var p=String(d).split('-');return (+p[1])+'/'+(+p[2]);}
+    return md(ws)+' ~ '+md(we);
+  }
+  function render(row){
+    var host=document.getElementById('weekly-briefing');
+    if(!host||!row) return;
+    var ws=row.week_start, we=(function(){var d=new Date(ws+'T00:00:00');d.setDate(d.getDate()+6);
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
+    var bullets=(row.bullets||[]).map(function(b){return '<li>'+esc(b)+'</li>';}).join('');
+    var todos=(row.todos||[]).map(function(t,i){return '<li><b style="color:#8FB4E3;">'+(i+1)+'.</b> '+esc(t)+'</li>';}).join('');
+    host.innerHTML=
+      '<div style="background:#1F4E78;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+      +'<span style="font-size:14px;font-weight:800;">\uD83D\uDDDE 이번 주 브리핑</span>'
+      +'<span style="font-size:11px;opacity:.75;">지난주('+fmtRange(ws,we)+') 실적 기준 · 자동 생성 요약</span>'
+      +'<span style="flex:1;"></span>'
+      +'<button id="wb-toggle" style="border:1px solid rgba(255,255,255,.4);background:none;color:#fff;border-radius:6px;padding:3px 12px;font-size:11.5px;cursor:pointer;font-family:inherit;">접기 \u25B4</button>'
+      +'</div>'
+      +'<div style="font-size:15px;font-weight:700;margin-top:8px;line-height:1.45;">'+esc(row.headline||'')+'</div>'
+      +'<div id="wb-body">'
+      +'<ul style="margin:10px 0 0 18px;font-size:12.5px;line-height:1.8;opacity:.95;">'+bullets+'</ul>'
+      +(todos?'<div style="margin-top:12px;background:rgba(255,255,255,.1);border-radius:8px;padding:10px 14px;">'
+        +'<div style="font-size:11.5px;font-weight:700;margin-bottom:5px;opacity:.9;">\u2705 이번 주 할 일</div>'
+        +'<ul style="list-style:none;font-size:12.5px;line-height:1.9;">'+todos+'</ul></div>':'')
+      +'<div style="font-size:10px;opacity:.55;margin-top:10px;">수치는 완료 주문 기준이며, 상세는 각 분석 탭에서 확인하세요.</div>'
+      +'</div></div>';
+    host.style.display='';
+    var tg=document.getElementById('wb-toggle'), bd=document.getElementById('wb-body');
+    tg.addEventListener('click',function(){
+      var open=bd.style.display!=='none';
+      bd.style.display=open?'none':'';
+      tg.textContent=open?'펼치기 \u25BE':'접기 \u25B4';
+    });
+  }
+  var tries=0;
+  var iv=setInterval(function(){
+    tries++;
+    if(tries>60){clearInterval(iv);return;}
+    var sb=window.__sb;
+    if(!sb||typeof window.__sbRole==='undefined'||window.__sbRole===null) return;
+    clearInterval(iv);
+    var scope=(window.__sbRole==='dealer'&&window.__sbDealer)?window.__sbDealer:'__all';
+    try{
+      sb.from('weekly_briefing').select('week_start,headline,bullets,todos')
+        .eq('scope',scope).order('week_start',{ascending:false}).limit(1)
+        .then(function(r){ if(r&&r.data&&r.data.length) render(r.data[0]); },function(){});
+    }catch(e){}
+  },500);
 })();
 </script>
 </body>
