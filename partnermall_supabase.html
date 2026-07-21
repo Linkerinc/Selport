@@ -2102,13 +2102,36 @@ body {
   <div id="sa-main-content" style="display:none">
 
     <!-- 공통 대리점 필터 -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
       <span style="font-size:13px;font-weight:700;">💰 매출 분석</span>
       <span style="font-size:12px;color:var(--text-sub,#64748b);">매출 기준 = 상품금액(공급가, 부가세 별도)</span>
       <span style="flex:1;"></span>
       <span style="font-size:12px;color:var(--text-sub,#64748b);">대리점</span>
       <select id="sa-dealer" style="padding:7px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:13px;background:#fff;max-width:220px;"><option value="all">전체 대리점</option></select>
     </div>
+
+    <!-- 공통 기간 필터 (카테고리별 매출 · 주문 내역에 적용) -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--text-sub,#64748b);">기간</span>
+      <input type="date" id="sa-from" style="padding:6px 9px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:12.5px;background:#fff;">
+      <span style="color:var(--text-sub,#64748b);">~</span>
+      <input type="date" id="sa-to" style="padding:6px 9px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:12.5px;background:#fff;">
+      <span id="sa-presets" style="display:inline-flex;gap:5px;flex-wrap:wrap;">
+        <button data-p="1m" class="sa-pbtn">최근 1개월</button>
+        <button data-p="3m" class="sa-pbtn">최근 3개월</button>
+        <button data-p="12m" class="sa-pbtn">최근 12개월</button>
+        <button data-p="ytd" class="sa-pbtn">올해</button>
+        <button data-p="all" class="sa-pbtn on">전체</button>
+      </span>
+      <span style="font-size:11px;color:var(--text-mute,#94a3b8);">· 카테고리별 매출과 주문 내역에 적용됩니다 (기간·연도 비교는 월 단위 지표)</span>
+    </div>
+    <style>
+      .sa-pbtn{padding:6px 11px;border:1px solid var(--border,#cbd5e1);border-radius:6px;background:#fff;color:var(--text-sub,#64748b);font-size:12px;cursor:pointer;font-family:inherit;}
+      .sa-pbtn.on{background:var(--primary,#1F4E78);color:#fff;border-color:var(--primary,#1F4E78);font-weight:600;}
+      .sa-st-pill{display:inline-block;border-radius:5px;padding:1px 8px;font-size:10.5px;font-weight:700;}
+      .sa-st-done{background:#E8F5E9;color:#16a34a;}
+      .sa-st-etc{background:#F1F5F9;color:#64748b;}
+    </style>
 
     <!-- 기간 비교 (전월 / 전년 동월) -->
     <div class="section" style="margin-bottom:18px;padding:16px;border:1px solid var(--border,#e5e7eb);border-radius:10px;">
@@ -2150,6 +2173,43 @@ body {
       </div>
       <div id="sa-cat-crumb" style="font-size:12.5px;color:var(--text-sub,#64748b);margin-bottom:12px;">전체</div>
       <div id="sa-cat"></div>
+    </div>
+
+    <!-- 주문 내역 (기간 필터 적용 · 관리자 페이지식 원본 목록) -->
+    <div class="section" style="padding:16px;border:1px solid var(--border,#e5e7eb);border-radius:10px;margin-top:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+        <div style="font-size:15px;font-weight:700;">🧾 주문 내역</div>
+        <div id="sa-ord-sum" style="font-size:12.5px;color:var(--text-sub,#64748b);">—</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <input id="sa-ord-q" placeholder="주문번호 · 업체명 · 제품명 검색" style="padding:7px 11px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:12.5px;background:#fff;width:250px;">
+        <select id="sa-ord-st" style="padding:7px 10px;border:1px solid var(--border,#cbd5e1);border-radius:6px;font-size:12.5px;background:#fff;">
+          <option value="all">전체 상태</option>
+          <option value="done">완료만</option>
+          <option value="etc">완료 외</option>
+        </select>
+        <span style="flex:1;"></span>
+        <button id="sa-ord-csv" class="sa-pbtn">⬇ CSV 다운로드</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px;">
+          <thead><tr style="background:#F1F5F9;color:var(--primary,#1F4E78);">
+            <th style="padding:8px 9px;text-align:left;white-space:nowrap;">주문일</th>
+            <th style="padding:8px 9px;text-align:left;white-space:nowrap;">주문번호</th>
+            <th style="padding:8px 9px;text-align:left;white-space:nowrap;">대리점</th>
+            <th style="padding:8px 9px;text-align:left;white-space:nowrap;">주문자(업체)</th>
+            <th style="padding:8px 9px;text-align:left;">제품명</th>
+            <th style="padding:8px 9px;text-align:right;white-space:nowrap;">수량</th>
+            <th style="padding:8px 9px;text-align:right;white-space:nowrap;">상품금액</th>
+            <th style="padding:8px 9px;text-align:center;white-space:nowrap;">상태</th>
+          </tr></thead>
+          <tbody id="sa-ord-tbody"></tbody>
+        </table>
+      </div>
+      <div style="text-align:center;margin-top:10px;">
+        <button id="sa-ord-more" class="sa-pbtn" style="display:none;">더 보기</button>
+      </div>
+      <div style="font-size:10.5px;color:var(--text-mute,#94a3b8);margin-top:8px;">라인(주문 상품) 단위 목록입니다. 같은 주문번호가 상품 수만큼 반복될 수 있으며, CSV에는 현재 필터의 전체 내역이 담깁니다.</div>
     </div>
 
   </div>
@@ -7022,9 +7082,11 @@ function recompute() {
 // ============================================================
 const PageSales = (function(){
   const DB='PartnermallAnalyzer';
-  let rows=null, dealers=[], curDealer='all', catPeriod='all';
+  let rows=null, orderRows=null, dealers=[], curDealer='all', catPeriod='all';
   let drill={l1:null,l2:null}, wired=false;
   let yearA=null, yearB=null, yearMetric='amt';
+  let fromYmd=0, toYmd=99999999;           // 기간 필터 (YYYYMMDD 숫자 비교 — 시간대 이슈 원천 차단)
+  let ordQ='', ordSt='all', ordShown=50, ordCurrent=[];
 
   function openDB(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
   function num(n){ return Math.round(n||0).toLocaleString(); }
@@ -7035,16 +7097,25 @@ const PageSales = (function(){
   async function load(){
     await window.loadDealerWhitelist();
     if(rows) return;
-    const db=await openDB(); rows=[];
+    const db=await openDB(); rows=[]; orderRows=[];
+    const pad2=n=>String(n).padStart(2,'0');
     await new Promise((res,rej)=>{
       const req=db.transaction('orders','readonly').objectStore('orders').openCursor();
       req.onsuccess=e=>{ const cur=e.target.result;
         if(cur){ const r=cur.value;
-          if(r['처리상태']==='완료'){
-            const y=+r['주문일시(년)'], m=+r['주문일시(월)'];
-            if(y&&m){ rows.push({ amt:+r['상품금액']||0, qty:+r['수량']||0, ord:r['주문번호'],
-              c1:r['대분류']||'(미분류)', c2:r['중분류']||'(미분류)', c3:r['소분류']||'(미분류)',
-              ym:y*100+m, dealer:r['주문가맹점']||'' }); }
+          const y=+r['주문일시(년)'], m=+r['주문일시(월)'], dd=+r['주문일시(일)']||1;
+          if(y&&m){
+            const ymd=y*10000+m*100+dd;
+            if(r['처리상태']==='완료'){
+              rows.push({ amt:+r['상품금액']||0, qty:+r['수량']||0, ord:r['주문번호'],
+                c1:r['대분류']||'(미분류)', c2:r['중분류']||'(미분류)', c3:r['소분류']||'(미분류)',
+                ym:y*100+m, ymd:ymd, dealer:r['주문가맹점']||'' });
+            }
+            // 주문 내역용: 전체 처리상태 포함
+            orderRows.push({ ymd:ymd, ds:y+'-'+pad2(m)+'-'+pad2(dd),
+              ord:String(r['주문번호']||''), dealer:r['주문가맹점']||'',
+              comp:r['주문자업체명']||r['주문자명']||'', pname:r['제품명']||'',
+              qty:+r['수량']||0, amt:+r['상품금액']||0, st:r['처리상태']||'' });
           }
           cur.continue();
         } else res();
@@ -7052,9 +7123,13 @@ const PageSales = (function(){
       req.onerror=()=>rej(req.error);
     });
     db.close();
+    orderRows.sort((a,b)=>b.ymd-a.ymd || (a.ord<b.ord?1:a.ord>b.ord?-1:0));
     const ds=new Set(); rows.forEach(r=>{ if(r.dealer && window.isRegisteredDealerName(r.dealer)) ds.add(r.dealer); });
     dealers=[...ds].sort((a,b)=>a.localeCompare(b,'ko'));
   }
+
+  function inRange(ymd){ return ymd>=fromYmd && ymd<=toYmd; }
+  function parseYmdInput(v){ if(!v) return null; const p=v.split('-'); if(p.length<3) return null; return (+p[0])*10000+(+p[1])*100+(+p[2]); }
 
   function filtered(){ return curDealer==='all'?rows:rows.filter(r=>r.dealer===curDealer); }
   function maxYm(list){ let mx=0; list.forEach(r=>{ if(r.ym>mx) mx=r.ym; }); return mx; }
@@ -7111,7 +7186,8 @@ const PageSales = (function(){
   }
 
   function catScopeRows(){
-    const data=filtered(); if(catPeriod==='all') return data;
+    const data=filtered().filter(r=>inRange(r.ymd));
+    if(catPeriod==='all') return data;
     const mx=maxYm(data); if(!mx) return [];
     const span=catPeriod==='m1'?1:catPeriod==='m3'?3:12;
     const from=ymMinus(mx,span-1);
@@ -7189,7 +7265,76 @@ const PageSales = (function(){
     box.innerHTML=html;
   }
 
-  function renderAll(){ renderPeriod(); renderTrend(); renderYear(); renderCat(); }
+  function renderOrders(reset){
+    const tb=document.getElementById('sa-ord-tbody'); if(!tb||!orderRows) return;
+    if(reset!==false) ordShown=50;
+    const q=ordQ.trim();
+    const base=orderRows.filter(r=>
+      (curDealer==='all'||r.dealer===curDealer) && inRange(r.ymd)
+      && (ordSt==='all' || (ordSt==='done' ? r.st==='완료' : r.st!=='완료'))
+      && (!q || r.ord.indexOf(q)>=0 || r.comp.indexOf(q)>=0 || r.pname.indexOf(q)>=0));
+    ordCurrent=base;
+    let amtDone=0; const ords=new Set();
+    base.forEach(r=>{ if(r.st==='완료') amtDone+=r.amt; if(r.ord) ords.add(r.ord); });
+    const sum=document.getElementById('sa-ord-sum');
+    if(sum) sum.innerHTML='라인 <b>'+num(base.length)+'</b>건 · 주문 <b>'+num(ords.size)+'</b>건 · 완료 매출 <b>'+won(amtDone)+'</b>';
+    const page=base.slice(0,ordShown);
+    tb.innerHTML = page.length ? page.map(r=>{
+      const pill=r.st==='완료'?'<span class="sa-st-pill sa-st-done">완료</span>':'<span class="sa-st-pill sa-st-etc">'+esc(r.st||'-')+'</span>';
+      return '<tr style="border-bottom:1px solid #EFEFEF;">'
+        +'<td style="padding:7px 9px;white-space:nowrap;">'+esc(r.ds)+'</td>'
+        +'<td style="padding:7px 9px;white-space:nowrap;font-variant-numeric:tabular-nums;">'+esc(r.ord)+'</td>'
+        +'<td style="padding:7px 9px;white-space:nowrap;">'+esc(r.dealer)+'</td>'
+        +'<td style="padding:7px 9px;white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.comp)+'">'+esc(r.comp)+'</td>'
+        +'<td style="padding:7px 9px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(r.pname)+'">'+esc(r.pname)+'</td>'
+        +'<td style="padding:7px 9px;text-align:right;font-variant-numeric:tabular-nums;">'+num(r.qty)+'</td>'
+        +'<td style="padding:7px 9px;text-align:right;font-variant-numeric:tabular-nums;">'+num(r.amt)+'</td>'
+        +'<td style="padding:7px 9px;text-align:center;">'+pill+'</td></tr>';
+    }).join('') : '<tr><td colspan="8" style="padding:22px;text-align:center;color:var(--text-mute,#94a3b8);">조건에 맞는 주문이 없습니다</td></tr>';
+    const more=document.getElementById('sa-ord-more');
+    if(more){
+      if(base.length>ordShown){ more.style.display=''; more.textContent='더 보기 (남은 '+num(base.length-ordShown)+'건)'; }
+      else more.style.display='none';
+    }
+  }
+  function downloadOrdersCsv(){
+    if(!ordCurrent.length){ return; }
+    const cell=v=>{ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+    const head=['주문일','주문번호','대리점','주문자(업체)','제품명','수량','상품금액','상태'];
+    const lines=[head.join(',')].concat(ordCurrent.map(r=>[r.ds,r.ord,r.dealer,r.comp,r.pname,r.qty,r.amt,r.st].map(cell).join(',')));
+    const blob=new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='주문내역_'+(curDealer==='all'?'전체':curDealer)+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }
+  function applyPreset(p){
+    const fromEl=document.getElementById('sa-from'), toEl=document.getElementById('sa-to');
+    document.querySelectorAll('#sa-presets .sa-pbtn').forEach(b=>b.classList.toggle('on', b.getAttribute('data-p')===p));
+    if(p==='all'){ if(fromEl)fromEl.value=''; if(toEl)toEl.value=''; fromYmd=0; toYmd=99999999; }
+    else{
+      const mx=orderRows.length?orderRows[0].ymd:0; // 최신 주문일 기준
+      if(!mx) return;
+      const y=Math.floor(mx/10000), m=Math.floor(mx/100)%100, d=mx%100;
+      const end=new Date(y,m-1,d); let start;
+      if(p==='ytd') start=new Date(y,0,1);
+      else{ const mo=p==='1m'?1:p==='3m'?3:12; start=new Date(y,m-1-mo,d); }
+      const f=v=>v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')+'-'+String(v.getDate()).padStart(2,'0');
+      if(fromEl)fromEl.value=f(start); if(toEl)toEl.value=f(end);
+      fromYmd=parseYmdInput(f(start)); toYmd=parseYmdInput(f(end));
+    }
+    renderCat(); renderOrders();
+  }
+  function onDateInput(){
+    const f=parseYmdInput((document.getElementById('sa-from')||{}).value);
+    const t=parseYmdInput((document.getElementById('sa-to')||{}).value);
+    fromYmd=f||0; toYmd=t||99999999;
+    document.querySelectorAll('#sa-presets .sa-pbtn').forEach(b=>b.classList.remove('on'));
+    renderCat(); renderOrders();
+  }
+
+  function renderAll(){ renderPeriod(); renderTrend(); renderYear(); renderCat(); renderOrders(); }
 
   function fillDealers(){
     const sel=document.getElementById('sa-dealer'); if(!sel||sel.__filled) return;
@@ -7209,6 +7354,21 @@ const PageSales = (function(){
     if(wired) return; wired=true;
     const dsel=document.getElementById('sa-dealer');
     if(dsel) dsel.addEventListener('change',()=>{ curDealer=dsel.value; drill={l1:null,l2:null}; renderAll(); });
+    // 기간 필터
+    const fEl=document.getElementById('sa-from'), tEl=document.getElementById('sa-to');
+    if(fEl) fEl.addEventListener('change',onDateInput);
+    if(tEl) tEl.addEventListener('change',onDateInput);
+    const pr=document.getElementById('sa-presets');
+    if(pr) pr.querySelectorAll('.sa-pbtn').forEach(b=>b.addEventListener('click',()=>applyPreset(b.getAttribute('data-p'))));
+    // 주문 내역
+    const oq=document.getElementById('sa-ord-q');
+    if(oq){ let tm=null; oq.addEventListener('input',()=>{ clearTimeout(tm); tm=setTimeout(()=>{ ordQ=oq.value; renderOrders(); },200); }); }
+    const ost=document.getElementById('sa-ord-st');
+    if(ost) ost.addEventListener('change',()=>{ ordSt=ost.value; renderOrders(); });
+    const om=document.getElementById('sa-ord-more');
+    if(om) om.addEventListener('click',()=>{ ordShown+=100; renderOrders(false); });
+    const oc=document.getElementById('sa-ord-csv');
+    if(oc) oc.addEventListener('click',downloadOrdersCsv);
     const psel=document.getElementById('sa-catperiod');
     if(psel) psel.addEventListener('change',()=>{ catPeriod=psel.value; renderCat(); });
     const catBox=document.getElementById('sa-cat');
@@ -7262,7 +7422,7 @@ const PageSales = (function(){
     const noData=document.getElementById('sa-no-data');
     const main=document.getElementById('sa-main-content');
     try{
-      rows=null; await load();
+      rows=null; orderRows=null; await load();
       if(!rows.length){ if(noData)noData.style.display=''; if(main)main.style.display='none'; return; }
       if(noData)noData.style.display='none'; if(main)main.style.display='';
       fillDealers(); fillYears(); wire(); drill={l1:null,l2:null}; renderAll();
