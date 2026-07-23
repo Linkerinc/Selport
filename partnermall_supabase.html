@@ -2480,7 +2480,7 @@ body {
         </div>
       </div>
       <div id="bh-member-list" style="margin-top:14px;"></div>
-      <div class="bh-note" style="margin-top:12px;">로그인 회원이 <b>실제로 조회한 상품</b>을 회원 단위로 모아 보여줘요. 조회가 많은데 최근 구매가 없는 회원이 <b>영업 우선순위</b>예요. 행을 누르면 그 회원이 본 상품 전체가 보여요. 회원 식별은 해시 매칭 기반이라 <b>주문 이력이 있는 회원만</b> 업체명이 표시돼요(그 외에는 익명 처리).</div>
+      <div class="bh-note" style="margin-top:12px;">로그인 회원이 <b>실제로 조회한 상품</b>을 회원 단위로 모아 보여줘요. 조회가 많은데 최근 구매가 없는 회원이 <b>영업 우선순위</b>예요. 행을 누르면 그 회원이 본 상품 전체가 보이고, <b style="color:#C00000;">조회만 하고 주문 이력이 없는 상품은 붉은색(미구매)</b>으로 표시돼요. 회원 식별은 해시 매칭 기반이라 <b>주문 이력이 있는 회원만</b> 업체명이 표시돼요(그 외에는 익명 처리).</div>
     </div>
 
     <div id="bh-empty" style="display:none;text-align:center;padding:40px;color:var(--text-mute);">GA4 데이터를 불러오지 못했어요. (권한 또는 연결 확인 필요)</div>
@@ -2688,6 +2688,8 @@ const PageBehavior = (function(){
           if(!mm.error) (mm.data||[]).forEach(m=>{ memberMap[m.user_hash]=m; });
         }
       }catch(e){ memberMap={}; }
+      // 구매 대조 인덱스는 백그라운드 준비 (완료 시 미구매 뱃지 표시 갱신)
+      try{ ensurePurchaseIndex().then(()=>{ try{ renderMembers(); }catch(e){} }); }catch(e){}
       hostToDealer={}; const nmeSet=new Set();
       (dealerRowsRaw||[]).forEach(d=>{
         const nm=d.dealer_name||d.hostname;
@@ -3548,6 +3550,42 @@ const PageBehavior = (function(){
       }
     }
   }
+  /* ── 구매 대조 인덱스: 회원ID → 구매(주문)한 제품명 집합 (IndexedDB orders 1회 스캔) ── */
+  let purchaseIdx=null, purchaseIdxLoading=null;
+  function normPName(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
+  function ensurePurchaseIndex(){
+    if(purchaseIdx) return Promise.resolve(purchaseIdx);
+    if(purchaseIdxLoading) return purchaseIdxLoading;
+    purchaseIdxLoading=new Promise((res)=>{
+      try{
+        const req=indexedDB.open('PartnermallAnalyzer',1);
+        req.onerror=()=>{ purchaseIdx={}; res(purchaseIdx); };
+        req.onsuccess=()=>{
+          const db=req.result, idx={};
+          const cur=db.transaction('orders','readonly').objectStore('orders').openCursor();
+          cur.onsuccess=e=>{ const c=e.target.result;
+            if(c){ const r=c.value;
+              const mid=r['주문자ID'], pn=r['제품명'], st=String(r['처리상태']||'');
+              if(mid && pn && st.indexOf('취소')<0){
+                (idx[mid]=idx[mid]||new Set()).add(normPName(pn));
+              }
+              c.continue();
+            } else { db.close(); purchaseIdx=idx; res(idx); }
+          };
+          cur.onerror=()=>{ db.close(); purchaseIdx={}; res(purchaseIdx); };
+        };
+      }catch(e){ purchaseIdx={}; res(purchaseIdx); }
+    });
+    return purchaseIdxLoading;
+  }
+  // 'yes' 구매함 / 'no' 미구매 / 'unknown' 회원 미식별 / 'loading' 인덱스 준비 전
+  function boughtState(memberId,itemName){
+    if(!purchaseIdx) return 'loading';
+    if(!memberId) return 'unknown';
+    const set=purchaseIdx[memberId];
+    return (set && set.has(normPName(itemName))) ? 'yes' : 'no';
+  }
+
   async function exportMembersXlsx(){
     const btn=document.getElementById('bh-member-xlsx');
     try{
@@ -3580,7 +3618,7 @@ const PageBehavior = (function(){
       if(!arr.length){ alert('조건에 맞는 회원이 없습니다.'); return; }
       if(btn){ btn.disabled=true; btn.textContent='생성 중…'; }
       if(!window.__ensureExcelJS) throw new Error('엑셀 모듈을 찾을 수 없어요');
-      await window.__ensureExcelJS();
+      await Promise.all([window.__ensureExcelJS(), ensurePurchaseIndex()]);
       const F='Malgun Gothic';
       const headFill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F4E78'}};
       const styleHead=row=>{ row.eachCell(c=>{ c.font={name:F,size:10,bold:true,color:{argb:'FFFFFFFF'}}; c.fill=headFill; c.alignment={horizontal:'center'}; }); row.height=20; };
@@ -3588,40 +3626,48 @@ const PageBehavior = (function(){
       const wb=new ExcelJS.Workbook();
       /* 시트1: 회원 요약 (영업 골든리스트) */
       const s1=wb.addWorksheet('회원요약');
-      s1.columns=[{width:26},{width:14},{width:20},{width:10},{width:16},{width:56},{width:12}];
+      s1.columns=[{width:26},{width:14},{width:20},{width:10},{width:11},{width:16},{width:56},{width:12}];
       const h1=s1.getRow(1);
-      ['업체명','회원ID','대리점','총 조회수','주요 관심','관심 상품 TOP3 (조회수)','최근 조회'].forEach((v,j)=>h1.getCell(j+1).value=v);
+      ['업체명','회원ID','대리점','총 조회수','미구매 관심','주요 관심','관심 상품 TOP3 (조회수)','최근 조회'].forEach((v,j)=>h1.getCell(j+1).value=v);
       styleHead(h1);
       arr.forEach((m,i)=>{ const row=s1.getRow(2+i);
         const topSub=Object.entries(m.subs).sort((a,b)=>b[1]-a[1])[0];
         const top3=Object.entries(m.items).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+' ('+e[1]+')').join(' / ');
+        let nb=null;
+        if(m.mid){ nb=0; Object.keys(m.items).forEach(it=>{ if(boughtState(m.mid,it)==='no') nb++; }); }
         row.getCell(1).value=m.company||('미확인 회원 ('+m.h.slice(0,8)+'…)');
         row.getCell(2).value=m.mid||'';
         row.getCell(3).value=m.dealer||'';
         row.getCell(4).value=m.total; row.getCell(4).numFmt='#,##0';
-        row.getCell(5).value=topSub?subLabel(topSub[0]):'';
-        row.getCell(6).value=top3;
-        row.getCell(7).value=m.lastDate;
-        row.eachCell(c=>{ c.font={name:F,size:10}; c.border=bd; }); });
-      s1.views=[{state:'frozen',ySplit:1}]; s1.autoFilter='A1:G1';
+        row.getCell(5).value=(nb===null)?'확인불가':nb; if(typeof nb==='number') row.getCell(5).numFmt='#,##0';
+        row.getCell(6).value=topSub?subLabel(topSub[0]):'';
+        row.getCell(7).value=top3;
+        row.getCell(8).value=m.lastDate;
+        row.eachCell(c=>{ c.font={name:F,size:10}; c.border=bd; });
+        if(typeof nb==='number' && nb>0) row.getCell(5).font={name:F,size:10,bold:true,color:{argb:'FFC00000'}}; });
+      s1.views=[{state:'frozen',ySplit:1}]; s1.autoFilter='A1:H1';
       /* 시트2: 상세 (회원 x 상품) */
       const s2=wb.addWorksheet('상세(회원x상품)');
-      s2.columns=[{width:26},{width:14},{width:46},{width:16},{width:10},{width:12}];
+      s2.columns=[{width:26},{width:14},{width:46},{width:16},{width:10},{width:10},{width:12}];
       const h2=s2.getRow(1);
-      ['업체명','회원ID','상품명','분류','조회수','최근 조회'].forEach((v,j)=>h2.getCell(j+1).value=v);
+      ['업체명','회원ID','상품명','분류','조회수','구매여부','최근 조회'].forEach((v,j)=>h2.getCell(j+1).value=v);
       styleHead(h2);
       const orderIdx={}; arr.forEach((m,i)=>{ orderIdx[m.h]=i; });
       const detail=Object.values(byMI).filter(d=>orderIdx[d.h]!==undefined)
         .sort((a,b)=>(orderIdx[a.h]-orderIdx[b.h])||(b.views-a.views));
       detail.forEach((d,i)=>{ const row=s2.getRow(2+i); const info=memberMap[d.h]||null;
+        const bs=boughtState(info?info.member_id:null, d.item);
         row.getCell(1).value=info?info.company:('미확인 회원 ('+d.h.slice(0,8)+'…)');
         row.getCell(2).value=info?info.member_id:'';
         row.getCell(3).value=d.item;
         row.getCell(4).value=d.sub?subLabel(d.sub):'';
         row.getCell(5).value=d.views; row.getCell(5).numFmt='#,##0';
-        row.getCell(6).value=d.last;
-        row.eachCell(c=>{ c.font={name:F,size:10}; c.border=bd; }); });
-      s2.views=[{state:'frozen',ySplit:1}]; s2.autoFilter='A1:F1';
+        row.getCell(6).value=(bs==='no')?'미구매':(bs==='yes')?'구매':'확인불가';
+        row.getCell(7).value=d.last;
+        const fnt=(bs==='no')?{name:F,size:10,color:{argb:'FFC00000'}}:{name:F,size:10};
+        row.eachCell(c=>{ c.font=fnt; c.border=bd; });
+        if(bs==='no') row.getCell(6).font={name:F,size:10,bold:true,color:{argb:'FFC00000'}}; });
+      s2.views=[{state:'frozen',ySplit:1}]; s2.autoFilter='A1:G1';
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       const a=document.createElement('a');
@@ -3670,9 +3716,14 @@ const PageBehavior = (function(){
       const topSub=Object.entries(m.subs).sort((a,b)=>b[1]-a[1])[0];
       const nm=m.company ? esc(m.company)+' <span style="color:var(--text-mute);font-size:11px;">'+esc(m.mid)+'</span>'
                          : '<span style="color:var(--text-mute);">미확인 회원</span> <span style="color:var(--text-mute);font-size:10.5px;" title="'+esc(m.h)+'">'+esc(m.h.slice(0,8))+'…</span>';
+      let nbBadge='';
+      if(purchaseIdx && m.mid){
+        let nb=0; Object.keys(m.items).forEach(it=>{ if(boughtState(m.mid,it)==='no') nb++; });
+        if(nb>0) nbBadge=' <span style="color:#C00000;font-size:10.5px;font-weight:700;">미구매 '+nb+'</span>';
+      }
       html+='<tr class="bh-member-row" data-h="'+esc(m.h)+'" style="cursor:pointer;">'
         +'<td>'+nm+'</td>'
-        +'<td style="font-size:12px;color:var(--text-sub);">'+(topSub?esc(subLabel(topSub[0])):'—')+'</td>'
+        +'<td style="font-size:12px;color:var(--text-sub);">'+(topSub?esc(subLabel(topSub[0])):'—')+nbBadge+'</td>'
         +'<td class="num" style="font-weight:700;font-variant-numeric:tabular-nums;">'+num(m.total)+'</td>'
         +'<td style="text-align:right;font-size:11.5px;color:var(--text-mute);font-variant-numeric:tabular-nums;">'+esc(m.lastDate)+'</td>'
         +'<td style="color:var(--text-mute);">›</td></tr>';
@@ -3702,13 +3753,23 @@ const PageBehavior = (function(){
     else{
       const mx=list[0].v||1;
       body='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">상품명</th><th style="text-align:left;">소분류</th><th class="num">조회수</th></tr></thead><tbody>';
+      const mid=info?info.member_id:null;
       list.forEach(it=>{
         const w=Math.max(3,Math.round(it.v/mx*100));
-        body+='<tr><td style="position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div><span style="position:relative;">'+esc(it.nm)+'</span></td>'
+        const bs=boughtState(mid,it.nm);
+        const nmStyle=(bs==='no')?'color:#C00000;font-weight:600;':'';
+        const badge=(bs==='no')?' <span style="background:#FDECEA;color:#C00000;border-radius:4px;padding:0 6px;font-size:10px;font-weight:700;">미구매</span>'
+                  :(bs==='yes')?' <span style="background:#F1F5F9;color:#64748b;border-radius:4px;padding:0 6px;font-size:10px;font-weight:600;">구매</span>':'';
+        body+='<tr><td style="position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:rgba(31,78,120,0.10);"></div><span style="position:relative;'+nmStyle+'">'+esc(it.nm)+'</span><span style="position:relative;">'+badge+'</span></td>'
           +'<td style="font-size:11.5px;color:var(--text-sub);">'+(it.sub?esc(subLabel(it.sub)):'—')+'</td>'
           +'<td class="num" style="font-variant-numeric:tabular-nums;font-weight:500;">'+num(it.v)+'</td></tr>';
       });
       body+='</tbody></table>';
+      if(mid){
+        body+= purchaseIdx
+          ? '<div style="font-size:10.5px;color:var(--text-mute);margin-top:8px;">붉은색 = 조회했지만 주문 이력이 없는 상품 (주문자ID·제품명 매칭, 취소 주문 제외 · 표기가 다른 상품은 미구매로 보일 수 있어요)</div>'
+          : '<div style="font-size:10.5px;color:var(--text-mute);margin-top:8px;">구매 대조 준비 중… 잠시 후 다시 열면 미구매 표시가 나타나요.</div>';
+      }
     }
     document.getElementById('xsell-modal-title').innerHTML='👥 '+title;
     document.getElementById('xsell-modal-sub').textContent=sub+' · 이 회원이 본 상품';
