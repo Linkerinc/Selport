@@ -2474,6 +2474,7 @@ body {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">👥 회원별 관심 상품 <span class="hint">누가 무엇을 보고 있나 · 영업 골든리스트 (7/8 수집 시작)</span></h3>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <button id="bh-member-xlsx" style="font-size:12.5px;padding:5px 12px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--primary,#1F4E78);font-weight:600;cursor:pointer;font-family:inherit;">📊 엑셀</button>
           <input id="bh-member-search" type="text" placeholder="업체명·ID 검색" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);width:150px;">
           <select id="bh-member-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
         </div>
@@ -3547,6 +3548,91 @@ const PageBehavior = (function(){
       }
     }
   }
+  async function exportMembersXlsx(){
+    const btn=document.getElementById('bh-member-xlsx');
+    try{
+      const cs=cutDateStr();
+      let rows=memberRows;
+      if(cs) rows=rows.filter(r=>r.date>=cs);
+      if(curMemberMall!=='all') rows=rows.filter(r=>dealerOf(r.hostname)===curMemberMall);
+      if(!rows.length){ alert('내보낼 데이터가 없습니다.'); return; }
+      // 회원 단위 + 회원x상품 단위 동시 집계 (화면 30명 제한과 무관하게 전체)
+      const byM={}, byMI={};
+      rows.forEach(r=>{
+        const h=r.user_hash; if(!h) return;
+        const v=(+r.views||0);
+        if(!byM[h]) byM[h]={h,total:0,subs:{},items:{},lastDate:''};
+        byM[h].total+=v;
+        if(r.sub_code) byM[h].subs[r.sub_code]=(byM[h].subs[r.sub_code]||0)+v;
+        byM[h].items[r.item_name]=(byM[h].items[r.item_name]||0)+v;
+        if(r.date>byM[h].lastDate) byM[h].lastDate=r.date;
+        const k=h+'\u0001'+(r.item_name||'');
+        if(!byMI[k]) byMI[k]={h,item:r.item_name||'',sub:r.sub_code||'',views:0,last:''};
+        byMI[k].views+=v; if(r.date>byMI[k].last) byMI[k].last=r.date;
+      });
+      let arr=Object.values(byM).map(m=>{
+        const info=memberMap[m.h]||null;
+        return {...m, company:(info?info.company:''), mid:(info?info.member_id:''), dealer:(info?info.dealer:'')};
+      });
+      const q=(memberSearch||'').trim().toLowerCase();
+      if(q) arr=arr.filter(m=>(m.company||'').toLowerCase().indexOf(q)>=0||(m.mid||'').toLowerCase().indexOf(q)>=0);
+      arr.sort((a,b)=>b.total-a.total);
+      if(!arr.length){ alert('조건에 맞는 회원이 없습니다.'); return; }
+      if(btn){ btn.disabled=true; btn.textContent='생성 중…'; }
+      if(!window.__ensureExcelJS) throw new Error('엑셀 모듈을 찾을 수 없어요');
+      await window.__ensureExcelJS();
+      const F='Malgun Gothic';
+      const headFill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F4E78'}};
+      const styleHead=row=>{ row.eachCell(c=>{ c.font={name:F,size:10,bold:true,color:{argb:'FFFFFFFF'}}; c.fill=headFill; c.alignment={horizontal:'center'}; }); row.height=20; };
+      const bd={bottom:{style:'hair',color:{argb:'FFDDDDDD'}}};
+      const wb=new ExcelJS.Workbook();
+      /* 시트1: 회원 요약 (영업 골든리스트) */
+      const s1=wb.addWorksheet('회원요약');
+      s1.columns=[{width:26},{width:14},{width:20},{width:10},{width:16},{width:56},{width:12}];
+      const h1=s1.getRow(1);
+      ['업체명','회원ID','대리점','총 조회수','주요 관심','관심 상품 TOP3 (조회수)','최근 조회'].forEach((v,j)=>h1.getCell(j+1).value=v);
+      styleHead(h1);
+      arr.forEach((m,i)=>{ const row=s1.getRow(2+i);
+        const topSub=Object.entries(m.subs).sort((a,b)=>b[1]-a[1])[0];
+        const top3=Object.entries(m.items).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+' ('+e[1]+')').join(' / ');
+        row.getCell(1).value=m.company||('미확인 회원 ('+m.h.slice(0,8)+'…)');
+        row.getCell(2).value=m.mid||'';
+        row.getCell(3).value=m.dealer||'';
+        row.getCell(4).value=m.total; row.getCell(4).numFmt='#,##0';
+        row.getCell(5).value=topSub?subLabel(topSub[0]):'';
+        row.getCell(6).value=top3;
+        row.getCell(7).value=m.lastDate;
+        row.eachCell(c=>{ c.font={name:F,size:10}; c.border=bd; }); });
+      s1.views=[{state:'frozen',ySplit:1}]; s1.autoFilter='A1:G1';
+      /* 시트2: 상세 (회원 x 상품) */
+      const s2=wb.addWorksheet('상세(회원x상품)');
+      s2.columns=[{width:26},{width:14},{width:46},{width:16},{width:10},{width:12}];
+      const h2=s2.getRow(1);
+      ['업체명','회원ID','상품명','분류','조회수','최근 조회'].forEach((v,j)=>h2.getCell(j+1).value=v);
+      styleHead(h2);
+      const orderIdx={}; arr.forEach((m,i)=>{ orderIdx[m.h]=i; });
+      const detail=Object.values(byMI).filter(d=>orderIdx[d.h]!==undefined)
+        .sort((a,b)=>(orderIdx[a.h]-orderIdx[b.h])||(b.views-a.views));
+      detail.forEach((d,i)=>{ const row=s2.getRow(2+i); const info=memberMap[d.h]||null;
+        row.getCell(1).value=info?info.company:('미확인 회원 ('+d.h.slice(0,8)+'…)');
+        row.getCell(2).value=info?info.member_id:'';
+        row.getCell(3).value=d.item;
+        row.getCell(4).value=d.sub?subLabel(d.sub):'';
+        row.getCell(5).value=d.views; row.getCell(5).numFmt='#,##0';
+        row.getCell(6).value=d.last;
+        row.eachCell(c=>{ c.font={name:F,size:10}; c.border=bd; }); });
+      s2.views=[{state:'frozen',ySplit:1}]; s2.autoFilter='A1:F1';
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      const nm=(curMemberMall==='all'?'전체':curMemberMall).replace(/[\\\/:*?"<>|]/g,'_');
+      a.download='회원별관심상품_'+nm+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+    }catch(e){ alert('엑셀 생성 실패: '+(e.message||e)); }
+    finally{ if(btn){ btn.disabled=false; btn.textContent='\uD83D\uDCCA 엑셀'; } }
+  }
   function renderMembers(){
     const box=document.getElementById('bh-member-list'); if(!box) return;
     const cs=cutDateStr();
@@ -3689,6 +3775,8 @@ const PageBehavior = (function(){
       cksel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       cksel.addEventListener('change',()=>{ curClickMall=cksel.value; renderClicks(); });
     }
+    const mbx=document.getElementById('bh-member-xlsx');
+    if(mbx && !mbx.__wired){ mbx.__wired=1; mbx.addEventListener('click',exportMembersXlsx); }
     const mbsel=document.getElementById('bh-member-mall');
     if(mbsel && !mbsel.__wired){ mbsel.__wired=1;
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
@@ -6875,6 +6963,7 @@ function recompute() {
     });
     return excelJsLoading;
   }
+  window.__ensureExcelJS = ensureExcelJS; // 행동분석 패널 등 다른 모듈에서 재사용
   async function makeXlsx(scopeDealer){
     setStatus('엑셀 생성 중…');
     try{
