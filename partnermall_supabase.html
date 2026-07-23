@@ -2533,7 +2533,7 @@ const PageBehavior = (function(){
   let clickRows=[];
   let curClickMall='all', curClickRole='all';
   let memberRows=[], memberMap={};
-  let curMemberMall='all', memberSearch='';
+  let curMemberMall='all', memberSearch='', memberShown=30;
   let curSignupLv='all';
   let pageArr=[];
   let curMall='all', curDays=30;
@@ -3573,12 +3573,13 @@ const PageBehavior = (function(){
     });
     if(q) arr=arr.filter(m=>(m.company||'').toLowerCase().indexOf(q)>=0 || (m.mid||'').toLowerCase().indexOf(q)>=0);
     arr.sort((a,b)=>b.total-a.total);
-    const top=arr.slice(0,30);
+    const top=arr.slice(0,memberShown);
     if(!top.length){
       box.innerHTML='<div style="text-align:center;padding:24px;color:var(--text-mute);font-size:13px;">회원별 조회 데이터가 아직 없어요.<br><span style="font-size:11.5px;">(7/8부터 수집 시작 — 하루 이틀이면 채워져요)</span></div>';
       return;
     }
-    let html='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">회원</th><th style="text-align:left;">주요 관심</th><th class="num">조회수</th><th style="text-align:right;">최근 조회</th><th style="width:26px;"></th></tr></thead><tbody>';
+    let html='<div style="font-size:11.5px;color:var(--text-mute);margin-bottom:6px;">전체 '+num(arr.length)+'명 중 조회수 상위 '+num(top.length)+'명 표시</div>';
+    html+='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">회원</th><th style="text-align:left;">주요 관심</th><th class="num">조회수</th><th style="text-align:right;">최근 조회</th><th style="width:26px;"></th></tr></thead><tbody>';
     top.forEach(m=>{
       const topSub=Object.entries(m.subs).sort((a,b)=>b[1]-a[1])[0];
       const nm=m.company ? esc(m.company)+' <span style="color:var(--text-mute);font-size:11px;">'+esc(m.mid)+'</span>'
@@ -3591,7 +3592,12 @@ const PageBehavior = (function(){
         +'<td style="color:var(--text-mute);">›</td></tr>';
     });
     html+='</tbody></table>';
+    if(arr.length>memberShown){
+      html+='<div style="text-align:center;margin-top:10px;"><button id="bh-member-more" style="padding:7px 16px;border:1px solid var(--border,#cbd5e1);border-radius:7px;background:#fff;color:var(--primary,#1F4E78);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">더 보기 (남은 '+num(arr.length-memberShown)+'명)</button></div>';
+    }
     box.innerHTML=html;
+    const moreBtn=document.getElementById('bh-member-more');
+    if(moreBtn) moreBtn.addEventListener('click',()=>{ memberShown+=50; renderMembers(); });
     box.querySelectorAll('.bh-member-row').forEach(tr=>{ tr.onclick=()=>openMemberDetail(tr.dataset.h); });
   }
   function openMemberDetail(hash){
@@ -3687,11 +3693,11 @@ const PageBehavior = (function(){
     if(mbsel && !mbsel.__wired){ mbsel.__wired=1;
       const names=[...dealerNames].sort((a,b)=>a.localeCompare(b,'ko'));
       mbsel.innerHTML='<option value="all">전체 통합</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
-      mbsel.addEventListener('change',()=>{ curMemberMall=mbsel.value; renderMembers(); });
+      mbsel.addEventListener('change',()=>{ curMemberMall=mbsel.value; memberShown=30; renderMembers(); });
     }
     const mbsrch=document.getElementById('bh-member-search');
     if(mbsrch && !mbsrch.__wired){ mbsrch.__wired=1;
-      mbsrch.addEventListener('input',()=>{ memberSearch=mbsrch.value; renderMembers(); });
+      mbsrch.addEventListener('input',()=>{ memberSearch=mbsrch.value; memberShown=30; renderMembers(); });
     }
     const di=document.getElementById('bh-datainfo'); if(di && gaRows.length) di.textContent=gaRows[0].date+' ~ '+maxDate;
   }
