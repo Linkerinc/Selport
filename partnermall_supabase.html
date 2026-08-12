@@ -6586,18 +6586,23 @@ function recompute() {
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='구매주기_'+tag+'_'+fmtDate(refDate)+'.csv'; a.click();
   }
 
+  function myExScope(){ return (window.__sbRole==='dealer'&&window.__sbDealer)?window.__sbDealer:'__all'; }
   async function setExcluded(k, comp, on){
     const sb=window.__sb; if(!sb){ alert('연결이 준비되지 않았어요. 새로고침 후 다시 시도해 주세요.'); return; }
+    const scope=myExScope(); // 대리점 계정은 자기 대리점 범위, 관리자는 전체 공통
     try{
       if(on){
-        const row={ member_key:k, company:comp||'' };
-        const r=await sb.from('cycle_excluded').upsert(row,{onConflict:'member_key'});
+        const row={ member_key:k, company:comp||'', dealer_scope:scope };
+        const r=await sb.from('cycle_excluded').upsert(row,{onConflict:'member_key,dealer_scope'});
         if(r.error) throw r.error;
         excludedMap[k]=row;
       }else{
-        const r=await sb.from('cycle_excluded').delete().eq('member_key',k);
+        // 자기 범위 행만 삭제 (대리점이 전체공통 제외를 지울 수는 없음 — RLS로도 차단됨)
+        const r=await sb.from('cycle_excluded').delete().eq('member_key',k).eq('dealer_scope',scope);
         if(r.error) throw r.error;
         delete excludedMap[k];
+        // 전체공통('__all') 제외가 남아 있으면 다시 반영
+        try{ await loadExcluded(); }catch(e){}
       }
       render();
     }catch(e){ alert('저장에 실패했어요: '+(e.message||e)); }
@@ -6607,7 +6612,16 @@ function recompute() {
       const sb=window.__sb; if(!sb) return;
       excludedMap={};
       const r=await sb.from('cycle_excluded').select('*');
-      (r.data||[]).forEach(x=>{ excludedMap[x.member_key]=x; });
+      const mine=myExScope();
+      (r.data||[]).forEach(x=>{
+        const sc=x.dealer_scope||'__all';
+        // 내 화면에 적용: 전체공통('__all') + 내 범위. (관리자 화면엔 전체공통만 적용 —
+        // 대리점별 제외는 그 대리점 화면에서만 숨김)
+        if(sc==='__all' || sc===mine){
+          // 전체공통이 대리점 개별 제외보다 우선 표시되도록 '__all'을 덮어쓰기 우선
+          if(!excludedMap[x.member_key] || sc==='__all') excludedMap[x.member_key]=x;
+        }
+      });
     }catch(e){ excludedMap={}; }
   }
   async function boot(retry){
