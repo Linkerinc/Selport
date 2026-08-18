@@ -1395,6 +1395,8 @@ body {
     injectHeaderUI(me.role, me.dealer_name);
     const tb=document.getElementById('tab-behavior');
     if(tb) tb.style.display = (me.role==='admin'||me.role==='staff') ? '' : 'none';
+    const ta=document.getElementById('tab-ai');
+    if(ta) ta.style.display = (me.role==='admin') ? '' : 'none';
     const meta=document.getElementById('header-meta'); const start=Date.now();
     const t=setInterval(()=>{
       const txt=meta?meta.textContent:'';
@@ -1451,6 +1453,7 @@ body {
   <div class="tab" data-page="sales">💰 매출 분석</div>
   <div class="tab" data-page="companies">👥 회원사 분석</div>
   <div class="tab" data-page="behavior" id="tab-behavior" style="display:none">📈 고객행동분석</div>
+  <div class="tab" data-page="ai" id="tab-ai" style="display:none">🤖 AI 질의</div>
 </nav>
 
 
@@ -2218,6 +2221,35 @@ body {
 </div>
 
 <!-- ============== 페이지: behavior (고객행동분석 · admin/staff 전용) ============== -->
+<div class="page-panel page-ai" id="panel-ai" data-page="ai">
+<main class="app-main">
+  <div style="max-width:900px;margin:0 auto;">
+    <div style="background:#1F4E78;color:#fff;border-radius:12px;padding:14px 18px;margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:800;">🤖 AI 데이터 질의 <span style="font-size:10.5px;font-weight:600;background:#C55A11;border-radius:4px;padding:1px 8px;vertical-align:middle;margin-left:6px;">최고관리자 전용</span></div>
+      <div style="font-size:11.5px;opacity:.85;margin-top:4px;">자연어로 질문하면 AI가 조회 쿼리를 만들어 실행하고 결과를 표로 드립니다. 읽기 전용이라 데이터 변경은 불가능하며, 실행된 SQL이 함께 표시되니 조건을 꼭 확인하세요.</div>
+    </div>
+    <div id="ai-msgs" style="min-height:200px;max-height:56vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;"></div>
+    <div id="ai-hint" style="font-size:11.5px;color:var(--text-mute,#94a3b8);margin:8px 2px;">
+      예시: 이벤트 배너 이미지 첨부 + "이 이벤트 대상자와 지급액 리스트" ·
+      "지난달 슈퍼그립 200을 100만원 이상 구매한 기업회원 리스트, 구매금액 1% 적립(회원당 50만원 상한)" ·
+      "이번 달 대리점별 완료 매출 순위" · "최근 30일 신규 첫 구매 회원사"
+    </div>
+    <div id="ai-imgchip" style="display:none;align-items:center;gap:8px;margin-bottom:8px;background:#EFF4FA;border:1px solid #D9E1F2;border-radius:8px;padding:6px 10px;font-size:12px;width:fit-content;">
+      <img id="ai-imgthumb" style="height:34px;border-radius:5px;" alt="첨부 이미지">
+      <span>이미지 첨부됨 (이벤트 조건을 AI가 읽습니다)</span>
+      <button id="ai-imgclear" style="border:none;background:none;cursor:pointer;font-size:14px;color:#8C8C8C;">✕</button>
+    </div>
+    <input type="file" id="ai-file" accept="image/*" style="display:none;">
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <button id="ai-attach" title="이벤트 배너 등 이미지 첨부" style="padding:10px 13px;border:1px solid var(--border,#cbd5e1);border-radius:10px;background:#fff;font-size:15px;cursor:pointer;font-family:inherit;">📎</button>
+      <textarea id="ai-input" rows="2" placeholder="질문을 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈 · 이미지 붙여넣기 가능)"
+        style="flex:1;padding:10px 12px;border:1px solid var(--border,#cbd5e1);border-radius:10px;font-size:13px;font-family:inherit;resize:vertical;background:#fff;"></textarea>
+      <button id="ai-send" style="padding:10px 20px;border:none;border-radius:10px;background:#1F4E78;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">질문</button>
+    </div>
+  </div>
+</main>
+</div>
+
 <div class="page-panel page-behavior" id="panel-behavior" data-page="behavior">
 <main class="app-main" style="max-width:100%;padding:16px 24px;">
   <div id="behavior-denied" style="display:none;text-align:center;padding:80px 20px;color:var(--text-mute);">
@@ -2280,7 +2312,7 @@ body {
       <span id="bh-range" style="font-size:12px;color:var(--text-sub);"></span>
       <a class="bh-looker" href="https://lookerstudio.google.com/reporting/9d379418-1c23-412f-a8d2-8e15652e8c53" target="_blank" rel="noopener">📊 Looker 상세 ↗</a>
     </div>
-    <div class="bh-note">GA4 행동 데이터 기준 · 집계 기간 <b id="bh-datainfo">—</b> · 장바구니담기(add_to_cart)는 미수집이라 퍼널에서 제외 · 정확한 매출은 대시보드/회원사 탭 참고</div>
+    <div class="bh-note">행동 지표(사용자·세션·조회·결제시작)는 GA4, <b>구매수·전환율은 파트너몰 주문 데이터(API) 기준</b>(취소 제외) · 집계 기간 <b id="bh-datainfo">—</b> · 장바구니담기(add_to_cart)는 미수집이라 퍼널에서 제외</div>
     <div class="bh-kpis" id="bh-kpis"></div>
     <div class="bh-grid">
       <div class="bh-panel">
@@ -2374,7 +2406,7 @@ body {
         <span style="font-size:11.5px;color:var(--text-mute);">조회가 적은 상품은 전환율이 출렁여서 기본 10회+만 표시</span>
       </div>
       <div style="overflow-x:auto;"><table class="bh-malltbl">
-        <thead><tr><th style="width:44px;">#</th><th>상품</th><th class="num">조회수</th><th class="num">구매수</th><th class="num">구매 전환율</th></tr></thead>
+        <thead><tr><th style="width:44px;">#</th><th>상품</th><th class="num">조회수</th><th class="num">구매수(주문)</th><th class="num">주문 전환율</th></tr></thead>
         <tbody id="bh-itemconv-body"></tbody>
       </table></div>
     </div>
@@ -2520,6 +2552,7 @@ const PAGE_META = {
   sales: { title: '분석 · 매출', module: () => PageSales },
   companies: { title: '분석 · 회원사', module: () => PageCompanies },
   behavior: { title: '분석 · 고객행동', module: () => PageBehavior },
+  ai: { title: 'AI 질의 · 관리자', module: () => PageAI },
 };
 
 // 고객행동분석 (admin/staff 전용 · GA4 ga_daily_metrics 커스텀 대시보드)
@@ -2554,8 +2587,8 @@ const PageBehavior = (function(){
     active_users:{label:'사용자',key:'active_users',ratio:false},
     sessions:{label:'세션',key:'sessions',ratio:false},
     page_views:{label:'페이지뷰',key:'page_views',ratio:false},
-    purchases:{label:'구매수',key:'purchases',ratio:false},
-    conv:{label:'구매 전환율',key:'conv',ratio:true}
+    purchases:{label:'구매수 (주문)',key:'purchases',ratio:false},
+    conv:{label:'주문 전환율',key:'conv',ratio:true}
   };
   function dateMinus(dstr,days){ const d=new Date(dstr+'T00:00:00'); d.setDate(d.getDate()-days); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
   function isAllowed(){ const r=window.__sbRole; return r==='admin'||r==='staff'; }
@@ -2712,6 +2745,60 @@ const PageBehavior = (function(){
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
 
+  /* ── 구매 지표를 GA purchase 대신 파트너몰 주문 데이터(API)로 산정 ──
+     행동(사용자·세션·조회·장바구니·결제시작)은 GA4, 구매는 orders 기준.
+     GA purchase는 태깅 미구현 + 광고차단 손실이 있어 주문 데이터가 더 정확함. */
+  let ordDayMap=null, ordProdMap=null; // dealer|date → 주문수 / normName|dealer|date → 주문수
+  function buildOrderStats(){
+    return new Promise((res)=>{
+      if(ordDayMap){ res(); return; }
+      ordDayMap={}; ordProdMap={};
+      try{
+        const req=indexedDB.open('PartnermallAnalyzer',1);
+        req.onerror=()=>res();
+        req.onsuccess=()=>{
+          const db=req.result;
+          const seenDay=new Set(), seenProd=new Set();
+          const cur=db.transaction('orders','readonly').objectStore('orders').openCursor();
+          cur.onsuccess=e=>{ const c=e.target.result;
+            if(c){ const r=c.value;
+              const y=+r['주문일시(년)'], m=+r['주문일시(월)'], dd=+r['주문일시(일)'];
+              const ono=r['주문번호'], st=String(r['처리상태']||'');
+              if(y&&m&&dd&&ono && st.indexOf('취소')<0){
+                const ds=y+'-'+String(m).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+                const dl=r['주문가맹점']||'';
+                const kd=dl+'|'+ds;
+                if(!seenDay.has(ono+'|'+kd)){ seenDay.add(ono+'|'+kd); ordDayMap[kd]=(ordDayMap[kd]||0)+1; }
+                const pn=normPName(r['제품명']);
+                if(pn){ const kp=pn+'|'+kd;
+                  if(!seenProd.has(ono+'|'+kp)){ seenProd.add(ono+'|'+kp); ordProdMap[kp]=(ordProdMap[kp]||0)+1; } }
+              }
+              c.continue();
+            } else { db.close(); res(); }
+          };
+          cur.onerror=()=>{ try{db.close();}catch(e){} res(); };
+        };
+      }catch(e){ res(); }
+    });
+  }
+  function applyApiPurchases(){
+    if(!ordDayMap) return;
+    gaRows.forEach(r=>{ r.purchases = ordDayMap[dealerOf(r.hostname)+'|'+r.date] || 0; });
+  }
+  function apiItemPurchases(cs, mall){
+    // 기간·대리점 필터를 적용한 상품별 주문수 (정규화된 제품명 기준)
+    const out={};
+    if(!ordProdMap) return out;
+    Object.keys(ordProdMap).forEach(k=>{
+      const parts=k.split('|'); if(parts.length<3) return;
+      const name=parts[0], dl=parts[1], ds=parts[2];
+      if(cs && ds<cs) return;
+      if(mall!=='all' && dl!==mall) return;
+      out[name]=(out[name]||0)+ordProdMap[k];
+    });
+    return out;
+  }
+
   function periodRows(){
     const cs=cutDateStr();
     return cs ? gaRows.filter(r=>r.date>=cs) : gaRows;
@@ -2734,8 +2821,8 @@ const PageBehavior = (function(){
       ['active_users','사용자',num(s.active_users)],
       ['sessions','세션',num(s.sessions)],
       ['page_views','페이지뷰',num(s.page_views)],
-      ['purchases','구매수',num(s.purchases)],
-      ['conv','구매 전환율',conv.toFixed(2)+'%']
+      ['purchases','구매수 (주문)',num(s.purchases)],
+      ['conv','주문 전환율',conv.toFixed(2)+'%']
     ];
     document.getElementById('bh-kpis').innerHTML = cards.map(([k,l,v])=>`<div class="bh-kpi bh-kpi-click" data-metric="${k}"><div class="lab">${l}</div><div class="val">${v}</div><div class="bh-kpi-more">상세 보기 ›</div></div>`).join('');
     document.querySelectorAll('#bh-kpis .bh-kpi-click').forEach(el=>{ el.onclick=()=>openDetail(el.dataset.metric); });
@@ -3147,8 +3234,10 @@ const PageBehavior = (function(){
   function renderItemConv(){
     const body=document.getElementById('bh-itemconv-body'); if(!body) return;
     const rows=bqItemFilteredRows();
+    const ap=apiItemPurchases(cutDateStr(), curMall); // 구매수 = 주문 데이터 기준
     const byName={};
-    rows.forEach(r=>{ const n=r.item_name||'(미상)'; if(!byName[n])byName[n]={v:0,p:0}; byName[n].v+=(+r.member_views||0)+(+r.guest_views||0); byName[n].p+=(+r.purchase_events||0); });
+    rows.forEach(r=>{ const n=r.item_name||'(미상)'; if(!byName[n])byName[n]={v:0,p:0}; byName[n].v+=(+r.member_views||0)+(+r.guest_views||0); });
+    Object.keys(byName).forEach(n=>{ byName[n].p = ap[normPName(n)] || 0; });
     let arr=Object.entries(byName).map(([n,o])=>({n,v:o.v,p:o.p,conv:o.v>0?o.p/o.v*100:0}));
     arr=arr.filter(o=>o.v>=curMinView).sort((a,b)=>b.conv-a.conv).slice(0,25);
     if(!arr.length){ body.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-mute);">조건에 맞는 상품이 없어요 (필터를 낮추거나 데이터가 더 쌓이길 기다려보세요)</td></tr>'; return; }
@@ -3874,6 +3963,8 @@ const PageBehavior = (function(){
     if(!loaded){
       const ok=await loadData();
       if(!ok){ const e=document.getElementById('bh-empty'); if(e)e.style.display='block'; return; }
+      await buildOrderStats();   // 구매 지표는 주문 데이터(API) 기준으로 산정
+      applyApiPurchases();
       loaded=true; buildControls(); render();
     }
   }
@@ -8009,6 +8100,147 @@ const PageSales = (function(){
       if (!uiReady) { uiReady = true; initApiSyncUI(); }
     }
   }, 400);
+})();
+</script>
+<script>
+/* ===== AI 데이터 질의 (최고관리자 전용 · 독립 모듈) ===== */
+const PageAI = (function(){
+  // 새 Worker 배포 후 주소가 다르면 이 값만 수정
+  const AI_WORKER_URL = 'https://selport-ai.dr78home.workers.dev';
+  let inited=false, busy=false, hist=[], attImg=null; // attImg={media_type,data(base64)}
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(n){ return (typeof n==='number')?n.toLocaleString('ko-KR'):esc(n); }
+  function addMsg(role, html){
+    const box=document.getElementById('ai-msgs'); if(!box) return null;
+    const d=document.createElement('div');
+    if(role==='user'){
+      d.style.cssText='align-self:flex-end;max-width:82%;background:#1F4E78;color:#fff;border-radius:12px 12px 2px 12px;padding:9px 13px;font-size:13px;line-height:1.55;white-space:pre-wrap;';
+    }else{
+      d.style.cssText='align-self:flex-start;max-width:95%;background:#F4F7FB;border:1px solid #E1E8F2;border-radius:12px 12px 12px 2px;padding:11px 14px;font-size:13px;line-height:1.6;';
+    }
+    d.innerHTML=html;
+    box.appendChild(d); box.scrollTop=box.scrollHeight;
+    return d;
+  }
+  function rowsTable(rows){
+    if(!rows.length) return '';
+    const cols=Object.keys(rows[0]);
+    const shown=rows.slice(0,50);
+    let h='<div style="overflow-x:auto;margin-top:8px;"><table style="border-collapse:collapse;font-size:12px;min-width:420px;"><thead><tr>';
+    cols.forEach(c=>{ h+='<th style="background:#1F4E78;color:#fff;padding:5px 9px;text-align:left;white-space:nowrap;">'+esc(c)+'</th>'; });
+    h+='</tr></thead><tbody>';
+    shown.forEach(r=>{ h+='<tr>'; cols.forEach(c=>{ const v=r[c];
+      const right=(typeof v==='number')?'text-align:right;font-variant-numeric:tabular-nums;':'';
+      h+='<td style="border-bottom:1px solid #E9EEF5;padding:5px 9px;'+right+'white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;">'+num(v)+'</td>'; });
+      h+='</tr>'; });
+    h+='</tbody></table></div>';
+    return h;
+  }
+  function downloadCsv(rows, name){
+    if(!rows.length) return;
+    const cols=Object.keys(rows[0]);
+    const cell=v=>{ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+    const lines=[cols.join(',')].concat(rows.map(r=>cols.map(c=>cell(r[c])).join(',')));
+    const blob=new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }
+  function setImg(img){
+    attImg=img;
+    const chip=document.getElementById('ai-imgchip'), th=document.getElementById('ai-imgthumb');
+    if(chip) chip.style.display = img ? 'flex' : 'none';
+    if(th && img) th.src='data:'+img.media_type+';base64,'+img.data;
+  }
+  function loadImageFile(file){
+    if(!file || file.type.indexOf('image/')!==0) return;
+    const rd=new FileReader();
+    rd.onload=function(){
+      const im=new Image();
+      im.onload=function(){
+        // 폭 1400px 이하로 축소해 용량 관리 (배너 텍스트 가독성 유지선)
+        const scale=Math.min(1, 1400/im.width);
+        const cv=document.createElement('canvas');
+        cv.width=Math.round(im.width*scale); cv.height=Math.round(im.height*scale);
+        cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);
+        const dataUrl=cv.toDataURL('image/jpeg',0.9);
+        setImg({ media_type:'image/jpeg', data:dataUrl.split(',')[1] });
+      };
+      im.src=rd.result;
+    };
+    rd.readAsDataURL(file);
+  }
+  async function ask(){
+    if(busy) return;
+    const input=document.getElementById('ai-input');
+    const q=(input.value||'').trim(); if(!q) return;
+    const sendImg=attImg;
+    addMsg('user', (sendImg?'<div style="font-size:11px;opacity:.8;margin-bottom:4px;">🖼 이미지 첨부</div>':'')+esc(q));
+    input.value=''; setImg(null); busy=true;
+    const sendBtn=document.getElementById('ai-send');
+    if(sendBtn){ sendBtn.disabled=true; sendBtn.textContent='분석 중…'; }
+    const loading=addMsg('assistant','<span style="color:#8C8C8C;">쿼리 생성·실행 중… (10~30초)</span>');
+    try{
+      const sess=await window.__sb.auth.getSession();
+      const token=sess && sess.data && sess.data.session ? sess.data.session.access_token : null;
+      if(!token) throw new Error('로그인 세션을 찾을 수 없어요. 새로고침 후 다시 시도하세요.');
+      const res=await fetch(AI_WORKER_URL,{
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'X-Supabase-Auth':token },
+        body:JSON.stringify({ question:q, history:hist.slice(-6), image:sendImg||undefined })
+      });
+      const out=await res.json();
+      let html='';
+      if(out.error){
+        html='<div style="color:#C00000;font-weight:600;">⚠ '+esc(out.error)+'</div>';
+        if(out.sql) html+='<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:11.5px;color:#8C8C8C;">시도한 SQL 보기</summary><pre style="font-size:11px;background:#fff;border:1px solid #E1E8F2;border-radius:8px;padding:10px;overflow-x:auto;white-space:pre-wrap;">'+esc(out.sql)+'</pre></details>';
+      }else{
+        html='<div style="white-space:pre-wrap;">'+esc(out.answer||'')+'</div>';
+        if(out.sql){
+          html+='<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:11.5px;color:#1F4E78;font-weight:600;">실행된 SQL 확인 (조건 검증용)</summary><pre style="font-size:11px;background:#fff;border:1px solid #E1E8F2;border-radius:8px;padding:10px;overflow-x:auto;white-space:pre-wrap;">'+esc(out.sql)+'</pre></details>';
+        }
+        if(out.rows && out.rows.length){
+          html+=rowsTable(out.rows);
+          html+='<div style="margin-top:8px;font-size:11.5px;color:#8C8C8C;display:flex;align-items:center;gap:10px;">'
+            +'<span>결과 '+Number(out.rowCount).toLocaleString('ko-KR')+'행'+(out.truncated?' (500행 제한으로 잘림 — 조건을 좁혀보세요)':'')+(out.rows.length>50?' · 화면엔 50행 표시':'')+'</span>'
+            +'<button class="ai-csv" style="padding:4px 12px;border:1px solid #1F4E78;border-radius:6px;background:#fff;color:#1F4E78;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;">⬇ CSV 전체 다운로드</button>'
+            +'</div>';
+        }
+      }
+      loading.innerHTML=html;
+      const csvBtn=loading.querySelector('.ai-csv');
+      if(csvBtn) csvBtn.addEventListener('click',()=>downloadCsv(out.rows,'AI질의결과_'+new Date().toISOString().slice(0,10)+'.csv'));
+      hist.push({role:'user',content:q});
+      hist.push({role:'assistant',content:(out.answer||out.error||'')+(out.sql?'\n[실행 SQL]\n'+out.sql:'')});
+      if(hist.length>12) hist=hist.slice(-12);
+    }catch(e){
+      loading.innerHTML='<div style="color:#C00000;">요청 실패: '+esc(e.message||e)+'</div>';
+    }finally{
+      busy=false;
+      if(sendBtn){ sendBtn.disabled=false; sendBtn.textContent='질문'; }
+    }
+  }
+  function init(){
+    if(inited) return; inited=true;
+    const btn=document.getElementById('ai-send');
+    const input=document.getElementById('ai-input');
+    if(btn) btn.addEventListener('click',ask);
+    if(input) input.addEventListener('keydown',e=>{
+      if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); }
+    });
+    const att=document.getElementById('ai-attach'), file=document.getElementById('ai-file');
+    if(att&&file){ att.addEventListener('click',()=>file.click());
+      file.addEventListener('change',()=>{ if(file.files&&file.files[0]) loadImageFile(file.files[0]); file.value=''; }); }
+    const clr=document.getElementById('ai-imgclear');
+    if(clr) clr.addEventListener('click',()=>setImg(null));
+    if(input) input.addEventListener('paste',e=>{
+      const items=(e.clipboardData||{}).items||[];
+      for(const it of items){ if(it.type&&it.type.indexOf('image/')===0){ loadImageFile(it.getAsFile()); e.preventDefault(); break; } }
+    });
+    addMsg('assistant','안녕하세요! 데이터에 대해 자연어로 질문해 주세요. 프로모션 정산, 회원 리스트, 매출 집계 등 무엇이든요.\n\n💡 구분값(예: 기업회원)이 확실치 않으면 제가 먼저 값 확인 쿼리를 제안할 수 있어요 — 결과를 보고 이어서 질문하시면 됩니다.');
+  }
+  return { init: init };
 })();
 </script>
 <script>
