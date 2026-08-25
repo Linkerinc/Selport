@@ -8298,5 +8298,374 @@ const PageAI = (function(){
   },500);
 })();
 </script>
+<script>
+/* ===== 회원 활동 조회 (ga_member_events · 독립 모듈 v1) =====
+   붙여넣는 위치: partnermall_supabase.html 맨 아래 </body> 바로 위.
+   기존 코드를 수정하지 않고, 고객행동분석 탭에 패널을 스스로 삽입합니다.
+   데이터: Supabase ga_member_events (파이프라인 추가13이 매일 적재)
+   접근: admin/staff만 (탭 숨김 + RLS 이중 차단) */
+(function(){
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var num=function(n){return Math.round(n||0).toLocaleString('ko-KR');};
+  var sb=null, hostToDealer=null;
+  var lkDays=30, lkMode='all';
+  var lastHash=null, lastInfo=null, lastTyped=null, lastEvents=null;
+
+  var EV={
+    page_view:['\uD83D\uDCC4','페이지 조회'], view_item:['\uD83D\uDC41\uFE0F','상품 조회'],
+    select_item:['\uD83D\uDC46','상품 선택'], add_to_cart:['\uD83D\uDED2','장바구니 담기'],
+    remove_from_cart:['\u21A9\uFE0F','장바구니 빼기'], view_cart:['\uD83E\uDDFA','장바구니 확인'],
+    begin_checkout:['\uD83D\uDCB3','결제 시작'], purchase:['\u2705','구매 완료'],
+    search:['\uD83D\uDD0E','검색'], view_search_results:['\uD83D\uDD0E','검색'],
+    login:['\uD83D\uDD11','로그인'], sign_up:['\uD83D\uDCDD','회원가입'],
+    file_download:['\uD83D\uDCE5','파일 다운로드']
+  };
+  var MAJOR={view_item:1,select_item:1,add_to_cart:1,remove_from_cart:1,view_cart:1,begin_checkout:1,purchase:1,search:1,view_search_results:1,login:1,sign_up:1,file_download:1};
+  var PN={'/':'메인 홈','/shop/':'메인 홈','/index.php':'메인 홈','/content/product/list':'상품 목록','/content/product/view':'상품 상세','/shop/cart.php':'장바구니','/bbs/board.php':'게시판','/shop/orderform.php':'주문서','/member/login.php':'로그인 페이지','/member/login_form.php':'로그인 페이지','/bbs/login.php':'로그인 페이지','/shop/mypage.php':'마이페이지','/content/mypage/order':'마이페이지 · 주문내역','/content/mypage/info':'마이페이지 · 회원정보','/content/member/join':'회원가입 페이지','/content/board/pointmall':'포인트몰','/shop/couponzone.php':'쿠폰존'};
+  var DEV={desktop:'\uD83D\uDCBB PC',mobile:'\uD83D\uDCF1 모바일',tablet:'\uD83D\uDCF1 태블릿'};
+
+  function normHost(h){ return String(h||'').replace(/^www\./,'').toLowerCase(); }
+  function dealerOf(h){ h=normHost(h); return (hostToDealer&&hostToDealer[h])||h; }
+  function isForeign(c){ return !!c && c!=='South Korea'; }
+  function ctry(c){ var M={'Taiwan':'대만','Japan':'일본','China':'중국','United States':'미국','Hong Kong':'홍콩','Singapore':'싱가포르','Vietnam':'베트남','Philippines':'필리핀','Indonesia':'인도네시아','Thailand':'태국','Malaysia':'말레이시아','Australia':'호주','United Kingdom':'영국','Germany':'독일','France':'프랑스','Ireland':'아일랜드','Turkey':'터키','India':'인도','Canada':'캐나다','New Zealand':'뉴질랜드','South Korea':'한국'}; return M[c]||c; }
+  function fBadge(r){
+    if(!isForeign(r.country)) return '';
+    return ' <span style="background:#FDECEA;color:#C00000;border-radius:4px;padding:0 6px;font-size:10px;font-weight:700;" title="'+esc(r.country+(r.city?(' · '+r.city):''))+'">\uD83C\uDF0F '+esc(ctry(r.country))+'</span>';
+  }
+  function sha256(s){
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function(b){
+      return Array.prototype.map.call(new Uint8Array(b),function(x){return x.toString(16).padStart(2,'0');}).join('');
+    });
+  }
+  function ensureDealers(){
+    if(hostToDealer) return Promise.resolve();
+    return sb.from('dealers').select('dealer_name,hostname').then(function(r){
+      hostToDealer={};
+      (r.data||[]).forEach(function(d){ hostToDealer[normHost(d.hostname)]=d.dealer_name||d.hostname; });
+    },function(){ hostToDealer={}; });
+  }
+  function el(id){ return document.getElementById(id); }
+  function pageLabel(r){
+    var p=String(r.page_path||''), base=p.split('?')[0];
+    if(PN[base]){
+      if(base==='/content/product/list' && /search_txt=/.test(p)){
+        var m=p.match(/search_txt=([^&]*)/); var kw=m?m[1]:'';
+        try{ kw=decodeURIComponent(kw); }catch(e){}
+        return '검색결과: "'+kw+'"';
+      }
+      return PN[base];
+    }
+    if(r.page_title) return String(r.page_title).slice(0,60);
+    return p.slice(0,60)||'(페이지)';
+  }
+  function evDetail(r){
+    var en=r.event_name;
+    if(en==='search'||en==='view_search_results') return '"'+esc(r.search_term||'')+'"';
+    if(r.item_name){
+      var extra=(r.items_count&&r.items_count>1)?(' <span style="color:#8C8C8C;font-size:11px;">외 '+(r.items_count-1)+'개</span>'):'';
+      return esc(r.item_name)+extra;
+    }
+    if(en==='page_view') return esc(pageLabel(r));
+    return '';
+  }
+  function tHM(ts){ try{ var d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; } }
+  function tFull(ts){ try{ var d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+tHM(ts); }catch(e){ return ''; } }
+  function wday(ds){ try{ return ['일','월','화','수','목','금','토'][new Date(ds+'T00:00:00').getDay()]; }catch(e){ return ''; } }
+
+  /* ---------- 데이터 조회 ---------- */
+  function fetchEvents(hash){
+    var out=[], cutoff=null;
+    if(lkDays>0){ var d=new Date(); d.setDate(d.getDate()-lkDays); cutoff=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    function page(from){
+      var q=sb.from('ga_member_events').select('*').eq('user_hash',hash).order('event_ts',{ascending:false}).range(from,from+999);
+      if(cutoff) q=q.gte('date',cutoff);
+      return q.then(function(r){
+        if(r.error){ if(from===0) throw r.error; return out; }
+        var d=r.data||[]; out=out.concat(d);
+        if(d.length<1000 || out.length>=4000) return out;
+        return page(from+d.length);
+      });
+    }
+    return page(0);
+  }
+
+  /* ---------- 검색 흐름 ---------- */
+  function search(){
+    var q=(el('lk-q').value||'').trim();
+    if(!q) return;
+    el('lk-body').innerHTML='<div style="padding:20px;color:#8C8C8C;font-size:13px;">조회 중\u2026</div>';
+    ensureDealers().then(function(){
+      return sb.from('member_hash_map').select('*').eq('member_id',q).limit(5);
+    }).then(function(r){
+      var cands=(!r.error&&r.data)?r.data:[];
+      if(cands.length) return cands;
+      return sb.from('member_hash_map').select('*').ilike('company','%'+q+'%').limit(20).then(function(r2){
+        return (!r2.error&&r2.data)?r2.data:[];
+      });
+    }).then(function(cands){
+      if(cands.length===1) return openMember(cands[0].user_hash, cands[0], null);
+      if(cands.length>1) return renderCandidates(cands);
+      return sha256(q).then(function(h){ return openMember(h, null, q); });
+    }).catch(function(e){
+      el('lk-body').innerHTML='<div style="padding:20px;color:#C00000;font-size:13px;">조회 실패: '+esc(e.message||e)+'</div>';
+    });
+  }
+  function renderCandidates(cands){
+    var h='<div style="font-size:12.5px;color:#595959;margin-bottom:8px;">여러 회원이 검색됐어요. 조회할 회원을 선택하세요:</div>';
+    cands.forEach(function(c,i){
+      h+='<div class="lk-cand" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border,#e5e5e5);border-radius:8px;margin-bottom:6px;cursor:pointer;background:#fff;">'
+        +'<span style="font-weight:600;">'+esc(c.company||'(업체명 없음)')+'</span>'
+        +'<span style="color:#8C8C8C;font-size:12px;">'+esc(c.member_id||'')+'</span>'
+        +(c.dealer?('<span style="color:#8C8C8C;font-size:11.5px;">· '+esc(c.dealer)+'</span>'):'')
+        +'<span style="margin-left:auto;color:#8C8C8C;">\u203A</span></div>';
+    });
+    el('lk-body').innerHTML=h;
+    el('lk-body').querySelectorAll('.lk-cand').forEach(function(d){
+      d.onclick=function(){ var c=cands[+d.dataset.i]; openMember(c.user_hash,c,null); };
+    });
+  }
+  function openMember(hash, info, typedId){
+    lastHash=hash; lastInfo=info; lastTyped=typedId;
+    el('lk-body').innerHTML='<div style="padding:20px;color:#8C8C8C;font-size:13px;">활동 기록을 불러오는 중\u2026</div>';
+    fetchEvents(hash).then(function(evts){
+      lastEvents=evts;
+      renderMember();
+    },function(e){
+      el('lk-body').innerHTML='<div style="padding:20px;color:#C00000;font-size:13px;">불러오기 실패: '+esc(e.message||e)+'<br><span style="font-size:11.5px;color:#8C8C8C;">ga_member_events 테이블/권한(RLS)을 확인하세요.</span></div>';
+    });
+  }
+
+  /* ---------- 렌더 ---------- */
+  function headHtml(){
+    var title, sub;
+    if(lastInfo){ title=esc(lastInfo.company||lastInfo.member_id); sub='ID: '+esc(lastInfo.member_id||'')+(lastInfo.dealer?(' · '+esc(lastInfo.dealer)):''); }
+    else if(lastTyped){ title='ID: '+esc(lastTyped); sub='회원 대조표(member_hash_map) 미등록 — 입력 ID의 해시로 직접 조회'; }
+    else { title='미확인 회원'; sub='해시 '+esc(String(lastHash).slice(0,12))+'\u2026'; }
+    return '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">'
+      +'<span style="font-size:15px;font-weight:800;color:var(--text,#262626);">\uD83D\uDC64 '+title+'</span>'
+      +'<span style="font-size:12px;color:#8C8C8C;">'+sub+'</span></div>';
+  }
+  function renderMember(){
+    var evts=lastEvents||[];
+    var shown=(lkMode==='major')?evts.filter(function(r){return MAJOR[r.event_name];}):evts;
+    var box=el('lk-body');
+    if(!evts.length){
+      box.innerHTML=headHtml()
+        +'<div style="text-align:center;padding:26px;color:#8C8C8C;font-size:13px;background:var(--bg-soft,#f5f7fa);border-radius:8px;">'
+        +'선택 기간('+(lkDays>0?('최근 '+lkDays+'일'):'전체')+')에 활동 기록이 없어요.<br>'
+        +'<span style="font-size:11.5px;">기간을 넓혀보거나, 이 회원이 로그인한 적이 없을 수 있어요. 데이터 자체가 안 쌓이면 파이프라인(추가13) 로그를 확인하세요.</span></div>';
+      return;
+    }
+    /* 요약 집계 */
+    var days={}, countries={}, devices={}, items={}, terms={}, malls={};
+    var purchases=0, checkouts=0;
+    evts.forEach(function(r){
+      days[r.date]=1;
+      if(r.country) countries[r.country]=(countries[r.country]||0)+1;
+      if(r.device) devices[r.device]=(devices[r.device]||0)+1;
+      if(r.hostname){ var dl=dealerOf(r.hostname); malls[dl]=(malls[dl]||0)+1; }
+      if((r.event_name==='view_item'||r.event_name==='select_item')&&r.item_name) items[r.item_name]=(items[r.item_name]||0)+1;
+      if(r.search_term) terms[r.search_term]=(terms[r.search_term]||0)+1;
+      if(r.event_name==='purchase') purchases++;
+      if(r.event_name==='begin_checkout') checkouts++;
+    });
+    var top=function(o,n){ return Object.keys(o).map(function(k){return [k,o[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,n); };
+    var topMall=top(malls,1)[0];
+    var topDev=top(devices,1)[0];
+    var cList=Object.keys(countries).sort(function(a,b){return countries[b]-countries[a];});
+    var cHtml=cList.map(function(c){
+      var f=isForeign(c);
+      return '<span style="'+(f?'color:#C00000;font-weight:700;':'')+'">'+(f?'\uD83C\uDF0F ':'')+esc(ctry(c))+' '+num(countries[c])+'</span>';
+    }).join(' · ')||'—';
+    var card=function(l,v,s){ return '<div style="flex:1;min-width:130px;background:var(--bg-soft,#f5f7fa);border:1px solid var(--border,#e5e5e5);border-radius:10px;padding:11px 14px;">'
+      +'<div style="font-size:10.5px;color:#8C8C8C;font-weight:600;text-transform:uppercase;letter-spacing:.4px;">'+l+'</div>'
+      +'<div style="font-size:16px;font-weight:800;margin-top:4px;color:var(--text,#262626);">'+v+'</div>'
+      +(s?('<div style="font-size:10.5px;color:#8C8C8C;margin-top:2px;">'+s+'</div>'):'')+'</div>'; };
+    var h=headHtml();
+    h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 12px;">'
+      +card('활동', num(evts.length)+'건', '활동일 '+num(Object.keys(days).length)+'일')
+      +card('마지막 활동', tFull(evts[0].event_ts), (topDev?(DEV[topDev[0]]||topDev[0]):''))
+      +card('주 이용 몰', topMall?esc(topMall[0]):'—', topMall?(num(topMall[1])+'건'):'')
+      +card('결제 행동', '결제시작 '+num(checkouts)+' · 구매 '+num(purchases), 'purchase는 6/27 장애 이후분 미수집 가능')
+      +card('접속 국가', cHtml, '')
+      +'</div>';
+    var topItems=top(items,5), topTerms=top(terms,8);
+    if(topTerms.length) h+='<div style="font-size:12.5px;margin-bottom:5px;"><b>\uD83D\uDD0E 검색어:</b> '+topTerms.map(function(t){return esc(t[0])+' <span style="color:#8C8C8C;font-size:11px;">('+t[1]+')</span>';}).join(' · ')+'</div>';
+    if(topItems.length) h+='<div style="font-size:12.5px;margin-bottom:10px;"><b>\uD83D\uDC41\uFE0F 많이 본 상품:</b> '+topItems.map(function(t){return esc(t[0])+' <span style="color:#8C8C8C;font-size:11px;">('+t[1]+')</span>';}).join(' · ')+'</div>';
+
+    /* 타임라인 (날짜 내림차순, 날짜 안은 시간 오름차순, 세션 구분선) */
+    var byDate={};
+    shown.forEach(function(r){ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+    var dates=Object.keys(byDate).sort().reverse();
+    var rendered=0, CAP=500, cut=false;
+    h+='<div style="border-top:1px solid var(--border,#e5e5e5);padding-top:10px;">';
+    for(var di=0; di<dates.length; di++){
+      if(rendered>=CAP){ cut=true; break; }
+      var ds=dates[di];
+      var list=byDate[ds].slice().sort(function(a,b){ return a.event_ts<b.event_ts?-1:1; });
+      h+='<div style="font-size:12.5px;font-weight:800;color:var(--primary,#1F4E78);margin:12px 0 6px;">'+esc(ds)+' ('+wday(ds)+') <span style="font-weight:500;color:#8C8C8C;font-size:11px;">· '+num(list.length)+'건</span></div>';
+      var prevSess=null;
+      for(var i=0;i<list.length;i++){
+        if(rendered>=CAP){ cut=true; break; }
+        var r=list[i];
+        var sess=r.session_id||'';
+        if(sess!==prevSess){
+          if(prevSess!==null) h+='<div style="height:6px;"></div>';
+          h+='<div style="font-size:10.5px;color:#8C8C8C;margin:2px 0 3px;padding-left:2px;">\u23F1 세션 시작'
+            +(r.device?(' · '+(DEV[r.device]||r.device)):'')
+            +(isForeign(r.country)?(' · <span style="color:#C00000;font-weight:700;">\uD83C\uDF0F '+esc(ctry(r.country))+(r.city?(' '+esc(r.city)):'')+'</span>'):'')
+            +'</div>';
+          prevSess=sess;
+        }
+        var m=EV[r.event_name]||['\u25B8',esc(r.event_name)];
+        var hl=(r.event_name==='purchase'||r.event_name==='begin_checkout');
+        h+='<div style="display:flex;align-items:baseline;gap:8px;padding:2.5px 0 2.5px 10px;font-size:12.5px;'+(hl?'background:#F3FBF4;border-radius:5px;':'')+'">'
+          +'<span style="flex:0 0 36px;color:#8C8C8C;font-size:11px;font-variant-numeric:tabular-nums;">'+tHM(r.event_ts)+'</span>'
+          +'<span style="flex:0 0 auto;">'+m[0]+'</span>'
+          +'<span style="flex:0 0 auto;color:var(--text-sub,#595959);'+(hl?'font-weight:700;':'')+'">'+m[1]+'</span>'
+          +'<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text,#262626);">'+evDetail(r)+'</span>'
+          +'<span style="flex:0 0 auto;color:#8C8C8C;font-size:10.5px;">'+esc(dealerOf(r.hostname))+'</span>'
+          +fBadge(r)
+          +'</div>';
+        rendered++;
+      }
+    }
+    h+='</div>';
+    if(cut) h+='<div style="font-size:11px;color:#8C8C8C;margin-top:8px;">표시 한도(500건)로 이전 활동은 생략했어요 — 기간을 좁히거나 "주요 활동만"으로 전환하거나 CSV로 받으세요.</div>';
+    if(lkMode==='major') h+='<div style="font-size:10.5px;color:#8C8C8C;margin-top:6px;">"주요 활동만" 모드: 단순 페이지 조회는 숨김 ('+num(evts.length-shown.length)+'건)</div>';
+    box.innerHTML=h;
+  }
+
+  /* ---------- CSV ---------- */
+  function csv(){
+    var evts=lastEvents; if(!evts||!evts.length){ alert('먼저 회원을 조회하세요.'); return; }
+    var cell=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; };
+    var head=['시각','이벤트','상세','검색어','상품','대리점몰','페이지','국가','도시','기기','세션'];
+    var lines=[head.join(',')].concat(evts.map(function(r){
+      return [tFull(r.event_ts), (EV[r.event_name]?EV[r.event_name][1]:r.event_name),
+        '', r.search_term||'', r.item_name||'', dealerOf(r.hostname), r.page_path||'',
+        r.country||'', r.city||'', r.device||'', r.session_id||''].map(cell).join(',');
+    }));
+    var nm=lastInfo?(lastInfo.member_id||lastInfo.company):(lastTyped||'member');
+    var blob=new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='회원활동_'+String(nm).replace(/[\\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }
+
+  /* ---------- 해외 접속 회원 목록 ---------- */
+  function showForeign(){
+    el('lk-body').innerHTML='<div style="padding:20px;color:#8C8C8C;font-size:13px;">최근 30일 해외 접속 이벤트를 확인 중\u2026</div>';
+    var d=new Date(); d.setDate(d.getDate()-30);
+    var cutoff=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    ensureDealers().then(function(){
+      return sb.from('ga_member_events').select('user_hash,country,city,date,hostname')
+        .gte('date',cutoff).not('country','is',null).neq('country','South Korea')
+        .order('date',{ascending:false}).limit(2000);
+    }).then(function(r){
+      if(r.error) throw r.error;
+      var rows=r.data||[];
+      if(!rows.length){ el('lk-body').innerHTML='<div style="text-align:center;padding:26px;color:#8C8C8C;font-size:13px;background:var(--bg-soft,#f5f7fa);border-radius:8px;">최근 30일간 해외에서 활동한 로그인 회원이 없어요. \uD83D\uDC4D</div>'; return; }
+      var byH={};
+      rows.forEach(function(x){
+        var o=byH[x.user_hash]=byH[x.user_hash]||{h:x.user_hash,n:0,cs:{},last:'',mall:''};
+        o.n++; o.cs[x.country]=1;
+        if(x.date>o.last){ o.last=x.date; o.mall=dealerOf(x.hostname); }
+      });
+      var hs=Object.keys(byH);
+      var mm={};
+      var chunks=[]; for(var i=0;i<hs.length;i+=150) chunks.push(hs.slice(i,i+150));
+      var p=Promise.resolve();
+      chunks.forEach(function(ch){
+        p=p.then(function(){ return sb.from('member_hash_map').select('*').in('user_hash',ch).then(function(r2){
+          (r2.data||[]).forEach(function(m){ mm[m.user_hash]=m; });
+        },function(){}); });
+      });
+      return p.then(function(){
+        var arr=hs.map(function(hh){ return byH[hh]; }).sort(function(a,b){ return b.n-a.n; });
+        var h='<div style="font-size:12.5px;color:#595959;margin-bottom:8px;"><b>\uD83C\uDF0F 최근 30일 해외 접속 회원</b> · '+num(arr.length)+'명 · 행을 누르면 타임라인이 열려요</div>';
+        h+='<table class="bh-malltbl" style="width:100%;"><thead><tr><th style="text-align:left;">회원</th><th style="text-align:left;">국가</th><th class="num">이벤트</th><th style="text-align:right;">최근 활동</th><th style="width:26px;"></th></tr></thead><tbody>';
+        arr.forEach(function(o){
+          var info=mm[o.h];
+          var nm=info?(esc(info.company||info.member_id)+' <span style="color:#8C8C8C;font-size:11px;">'+esc(info.member_id||'')+'</span>')
+                     :('<span style="color:#8C8C8C;">미확인</span> <span style="color:#8C8C8C;font-size:10.5px;">'+esc(o.h.slice(0,8))+'\u2026</span>');
+          h+='<tr class="lk-frow" data-h="'+esc(o.h)+'" style="cursor:pointer;">'
+            +'<td>'+nm+'</td>'
+            +'<td style="color:#C00000;font-weight:700;font-size:12px;">'+Object.keys(o.cs).map(ctry).map(esc).join(', ')+'</td>'
+            +'<td class="num">'+num(o.n)+'</td>'
+            +'<td style="text-align:right;font-size:11.5px;color:#8C8C8C;">'+esc(o.last)+' · '+esc(o.mall)+'</td>'
+            +'<td style="color:#8C8C8C;">\u203A</td></tr>';
+        });
+        h+='</tbody></table>';
+        h+='<div style="font-size:10.5px;color:#8C8C8C;margin-top:8px;">GA4 위치 기준(국가/도시)이라 VPN·기업 보안망(예: 3M Zscaler 홍콩)은 실제 위치와 다를 수 있어요. 최근 이벤트 2,000건 내 집계.</div>';
+        el('lk-body').innerHTML=h;
+        el('lk-body').querySelectorAll('.lk-frow').forEach(function(tr){
+          tr.onclick=function(){ var hh=tr.dataset.h; openMember(hh, mm[hh]||null, null); };
+        });
+      });
+    }).catch(function(e){
+      el('lk-body').innerHTML='<div style="padding:20px;color:#C00000;font-size:13px;">조회 실패: '+esc(e.message||e)+'</div>';
+    });
+  }
+
+  /* ---------- 패널 삽입 + 배선 ---------- */
+  function inject(){
+    if(el('lk-panel')) return;
+    var content=el('behavior-content'); if(!content) return;
+    var panel=document.createElement('div');
+    panel.className='bh-panel'; panel.id='lk-panel'; panel.style.marginBottom='14px';
+    panel.innerHTML=
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'
+      +'<h3 style="margin:0;">\uD83D\uDD75\uFE0F 회원 활동 조회 <span class="hint">ID·업체명으로 개별 회원의 행동 타임라인 · v1</span></h3>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      +'<div class="bh-seg" id="lk-days"><button data-d="30" class="on">30일</button><button data-d="90">90일</button><button data-d="0">전체</button></div>'
+      +'<div class="bh-seg" id="lk-mode"><button data-m="all" class="on">전체 활동</button><button data-m="major">주요 활동만</button></div>'
+      +'<button id="lk-csv" style="font-size:12.5px;padding:6px 12px;border:1px solid var(--border,#e5e5e5);border-radius:7px;background:#fff;color:var(--primary,#1F4E78);font-weight:600;cursor:pointer;font-family:inherit;">\u2B07 CSV</button>'
+      +'<button id="lk-foreign" style="font-size:12.5px;padding:6px 12px;border:1px solid #C00000;border-radius:7px;background:#fff;color:#C00000;font-weight:700;cursor:pointer;font-family:inherit;">\uD83C\uDF0F 해외 접속</button>'
+      +'</div></div>'
+      +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
+      +'<input id="lk-q" placeholder="회원 ID 또는 업체명 (예: neos123, 네오스엠)" style="flex:1;min-width:220px;font-size:13px;padding:9px 12px;border:1px solid var(--border,#e5e5e5);border-radius:8px;background:#fff;font-family:inherit;">'
+      +'<button id="lk-go" style="padding:9px 22px;border:none;border-radius:8px;background:var(--primary,#1F4E78);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">조회</button>'
+      +'</div>'
+      +'<div id="lk-body" style="margin-top:14px;">'
+      +'<div style="font-size:12.5px;color:#8C8C8C;">회원 ID 또는 업체명을 입력하면 그 회원이 언제 어떤 페이지·상품을 봤는지, 무엇을 검색했는지, 어느 나라에서 접속했는지 타임라인으로 보여줘요. 데이터는 매일 새벽 자동 적재(ga_member_events · 최근 180일 보존).</div>'
+      +'</div>';
+    var anchor=el('bh-empty');
+    if(anchor && anchor.parentNode===content) content.insertBefore(panel, anchor);
+    else content.appendChild(panel);
+    /* 배선 */
+    el('lk-go').onclick=search;
+    el('lk-q').addEventListener('keydown',function(e){ if(e.key==='Enter') search(); });
+    el('lk-csv').onclick=csv;
+    el('lk-foreign').onclick=showForeign;
+    var seg1=el('lk-days');
+    seg1.querySelectorAll('button').forEach(function(b){ b.onclick=function(){
+      seg1.querySelectorAll('button').forEach(function(x){x.classList.remove('on');}); b.classList.add('on');
+      lkDays=+b.dataset.d;
+      if(lastHash) openMember(lastHash,lastInfo,lastTyped);
+    }; });
+    var seg2=el('lk-mode');
+    seg2.querySelectorAll('button').forEach(function(b){ b.onclick=function(){
+      seg2.querySelectorAll('button').forEach(function(x){x.classList.remove('on');}); b.classList.add('on');
+      lkMode=b.dataset.m;
+      if(lastEvents) renderMember();
+    }; });
+  }
+
+  var tries=0;
+  var iv=setInterval(function(){
+    tries++;
+    if(tries>120){ clearInterval(iv); return; }
+    if(!window.__sb || window.__sbRole===undefined || window.__sbRole===null) return;
+    if(window.__sbRole!=='admin' && window.__sbRole!=='staff'){ clearInterval(iv); return; }
+    if(!document.getElementById('behavior-content')) return;
+    clearInterval(iv);
+    sb=window.__sb;
+    inject();
+  },500);
+})();
+</script>
 </body>
 </html>
