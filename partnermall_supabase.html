@@ -2749,6 +2749,14 @@ const PageBehavior = (function(){
      행동(사용자·세션·조회·장바구니·결제시작)은 GA4, 구매는 orders 기준.
      GA purchase는 태깅 미구현 + 광고차단 손실이 있어 주문 데이터가 더 정확함. */
   let ordDayMap=null, ordProdMap=null; // dealer|date → 주문수 / normName|dealer|date → 주문수
+  // 대리점명 정규화: orders.주문가맹점("(주)현대브러쉬시스템")과 dealers.dealer_name("현대브러쉬시스템")의
+  // 표기 차이를 흡수 (2026-09-03 수정 — 미정규화 조인으로 구매수가 전부 0으로 잡히던 버그)
+  function normDl(s){
+    s=String(s||'');
+    if(window.__normDealerName) s=window.__normDealerName(s);
+    else s=s.replace(/\(주\)|㈜/g,'').replace(/\s+/g,'').replace(/\(.*?\)/g,'');
+    return s.replace(/주식회사/g,'');
+  }
   function buildOrderStats(){
     return new Promise((res)=>{
       if(ordDayMap){ res(); return; }
@@ -2766,7 +2774,7 @@ const PageBehavior = (function(){
               const ono=r['주문번호'], st=String(r['처리상태']||'');
               if(y&&m&&dd&&ono && st.indexOf('취소')<0){
                 const ds=y+'-'+String(m).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
-                const dl=r['주문가맹점']||'';
+                const dl=normDl(r['주문가맹점']);
                 const kd=dl+'|'+ds;
                 if(!seenDay.has(ono+'|'+kd)){ seenDay.add(ono+'|'+kd); ordDayMap[kd]=(ordDayMap[kd]||0)+1; }
                 const pn=normPName(r['제품명']);
@@ -2783,7 +2791,7 @@ const PageBehavior = (function(){
   }
   function applyApiPurchases(){
     if(!ordDayMap) return;
-    gaRows.forEach(r=>{ r.purchases = ordDayMap[dealerOf(r.hostname)+'|'+r.date] || 0; });
+    gaRows.forEach(r=>{ r.purchases = ordDayMap[normDl(dealerOf(r.hostname))+'|'+r.date] || 0; });
   }
   function apiItemPurchases(cs, mall){
     // 기간·대리점 필터를 적용한 상품별 주문수 (정규화된 제품명 기준)
@@ -2793,7 +2801,7 @@ const PageBehavior = (function(){
       const parts=k.split('|'); if(parts.length<3) return;
       const name=parts[0], dl=parts[1], ds=parts[2];
       if(cs && ds<cs) return;
-      if(mall!=='all' && dl!==mall) return;
+      if(mall!=='all' && dl!==normDl(mall)) return;
       out[name]=(out[name]||0)+ordProdMap[k];
     });
     return out;
