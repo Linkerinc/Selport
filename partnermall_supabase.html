@@ -1394,7 +1394,7 @@ body {
     window.__sbDealer = me.dealer_name || null;
     injectHeaderUI(me.role, me.dealer_name);
     const tb=document.getElementById('tab-behavior');
-    if(tb) tb.style.display = (me.role==='admin'||me.role==='staff') ? '' : 'none';
+    if(tb) tb.style.display = (me.role==='admin'||me.role==='staff'||me.role==='dealer') ? '' : 'none';
     const ta=document.getElementById('tab-ai');
     if(ta) ta.style.display = (me.role==='admin') ? '' : 'none';
     const meta=document.getElementById('header-meta'); const start=Date.now();
@@ -2288,6 +2288,11 @@ body {
       .page-behavior .bh-malltbl td{padding:10px 12px;border-bottom:1px solid var(--border-light);}
       .page-behavior .bh-malltbl tbody tr:hover{background:var(--bg-soft);}
       @media(max-width:900px){.page-behavior .bh-kpis{grid-template-columns:repeat(2,1fr);}.page-behavior .bh-grid{grid-template-columns:1fr;}}
+      /* 대리점 계정 뷰: 공개 패널만 표시, 그리드 1열, KPI 3장 */
+      .page-behavior .dealer-mode [data-tier="admin"]{display:none !important;}
+      .page-behavior .dealer-mode .bh-grid{grid-template-columns:1fr;}
+      .page-behavior .dealer-mode .bh-kpis{grid-template-columns:repeat(3,1fr);}
+      .page-behavior .dealer-mode #bh-mall,.page-behavior .dealer-mode #bh-cart-mall,.page-behavior .dealer-mode #bh-search-mall{display:none;}
       .page-behavior .bh-kpi-click{cursor:pointer;transition:box-shadow .15s,transform .15s,border-color .15s;position:relative;}
       .page-behavior .bh-kpi-click:hover{box-shadow:0 4px 14px rgba(31,78,120,.14);transform:translateY(-2px);border-color:var(--primary);}
       .page-behavior .bh-kpi-more{font-size:11px;color:var(--primary);font-weight:600;margin-top:8px;opacity:.65;}
@@ -2315,25 +2320,25 @@ body {
         <input type="date" id="bh-to" style="border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12.5px;font-family:inherit;color:var(--text);background:#fff;">
       </span>
       <span id="bh-range" style="font-size:12px;color:var(--text-sub);"></span>
-      <a class="bh-looker" href="https://lookerstudio.google.com/reporting/9d379418-1c23-412f-a8d2-8e15652e8c53" target="_blank" rel="noopener">📊 Looker 상세 ↗</a>
+      <a class="bh-looker" data-tier="admin" href="https://lookerstudio.google.com/reporting/9d379418-1c23-412f-a8d2-8e15652e8c53" target="_blank" rel="noopener">📊 Looker 상세 ↗</a>
     </div>
     <div class="bh-note">행동 지표(사용자·세션·조회·결제시작)는 GA4, <b>구매수·전환율은 파트너몰 주문 데이터(API) 기준</b>(취소 제외) · 집계 기간 <b id="bh-datainfo">—</b> · 장바구니담기(add_to_cart)는 미수집이라 퍼널에서 제외</div>
     <div class="bh-kpis" id="bh-kpis"></div>
     <div class="bh-grid">
-      <div class="bh-panel">
+      <div class="bh-panel" data-tier="admin">
         <h3>구매 퍼널 <span class="hint">상품조회 → 장바구니조회 → 결제시작 → 구매</span></h3>
         <div id="bh-funnel"></div>
       </div>
-      <div class="bh-panel">
+      <div class="bh-panel" data-tier="all">
         <h3>일자별 추이 <span class="hint">세션 · 구매수</span></h3>
         <div style="position:relative;height:260px;"><canvas id="bh-trend"></canvas></div>
       </div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <h3>신규 vs 기존 회원사 <span class="hint">주문(orders) 완료 기준 · 생애 첫 주문일로 판정</span></h3>
       <div id="bh-dealernew"></div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <h3>몰별 비교 <span class="hint">선택 기간 기준 · 전체 몰</span></h3>
       <div style="overflow-x:auto;">
         <table class="bh-malltbl">
@@ -2345,7 +2350,7 @@ body {
         </table>
       </div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <h3>📄 페이지 분석 <span class="hint">조회 많은 · 오래 보는 페이지 · 행 클릭 시 상세</span></h3>
       <div style="overflow-x:auto;"><table class="bh-malltbl">
         <thead><tr><th>페이지</th><th class="num">조회수</th><th class="num">평균 체류</th></tr></thead>
@@ -2353,7 +2358,7 @@ body {
       </table></div>
     </div>
     <div class="bh-grid">
-      <div class="bh-panel">
+      <div class="bh-panel" data-tier="admin">
         <h3>🛒 상품 조회 TOP <span class="hint">많이 본 상품 (조회수 기준) · 회원/비회원 구분</span></h3>
         <div style="margin-bottom:11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <div class="bh-seg" id="bh-item-role">
@@ -2366,7 +2371,7 @@ body {
         </div>
         <div id="bh-item-list"></div>
       </div>
-      <div class="bh-panel">
+      <div class="bh-panel" data-tier="all">
         <h3>🧺 장바구니 담은 상품 TOP <span class="hint">담은 횟수 기준 (수량 아님)</span></h3>
         <div style="margin-bottom:11px;display:flex;align-items:center;gap:8px;">
           <span style="font-size:12px;color:var(--text-sub);">대리점</span>
@@ -2375,7 +2380,7 @@ body {
         <div id="bh-cart-list"></div>
       </div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <h3>🔀 크로스셀링 <span class="hint">대리점별 카테고리 조회 · 주력과 다른 카테고리 발견</span></h3>
       <div style="margin:2px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <div class="bh-seg" id="bh-cat-role">
@@ -2399,7 +2404,7 @@ body {
         <div id="xsell-modal-body" style="padding:8px 20px 18px;overflow-y:auto;"></div>
       </div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <h3>🎯 상품별 구매 전환율
         <span class="hint" style="margin-right:10px;">구매 횟수 ÷ 조회 횟수 · 높을수록 잘 팔리는 상품</span>
       </h3>
@@ -2415,7 +2420,7 @@ body {
         <tbody id="bh-itemconv-body"></tbody>
       </table></div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="all">
       <h3>🔎 인기 검색어 <span class="hint">사이트 내 검색 기준 · 선택 기간 · 신규 고객의 관심 키워드</span></h3>
       <div style="margin:2px 0 12px;display:flex;align-items:center;gap:8px;">
         <span style="font-size:12px;color:var(--text-sub);">대리점</span>
@@ -2432,7 +2437,7 @@ body {
         </div>
       </div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">👤 방문자 유형 <span class="hint">로그인 회원 vs 비회원(게스트) · 선택 기간</span></h3>
         <div class="bh-seg" id="bh-vis-metric">
@@ -2453,7 +2458,7 @@ body {
       </div>
       <div class="bh-note" style="margin-top:12px;">로그인 회원 비중이 높을수록 단골·충성 고객이 많다는 신호예요. 비회원(게스트)은 로그인 없이 둘러본 방문이에요.</div>
     </div>
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">📖 페이지 완독률 <span class="hint">페이지를 끝까지(90% 스크롤) 본 비율 · 조회 많은 페이지 순</span></h3>
         <select id="bh-scroll-mall" style="font-size:12.5px;padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);max-width:240px;"><option value="all">전체 통합</option></select>
@@ -2462,7 +2467,7 @@ body {
       <div class="bh-note" style="margin-top:12px;">완독률 = 그 페이지를 본 사람 중 <b>90%까지 스크롤</b>해 사실상 끝까지 본 비율이에요. 조회는 많은데 완독률이 낮으면 <b>윗부분만 보고 이탈</b>하는 페이지예요(예: 회원가입 폼 완독률이 낮으면 가입 중 이탈). 장바구니·로그인 같은 <b>처리용 페이지는 제외</b>했고, 조회 30회 미만 페이지도 비율이 튀어 뺐어요.</div>
     </div>
 
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">🧭 회원가입 퍼널 <span class="hint">안내 → 약관 → 정보입력 → 입력시작/제출 → 완료</span></h3>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2478,7 +2483,7 @@ body {
       <div class="bh-note" style="margin-top:12px;">각 단계로 넘어간 <b>사용자 수</b>예요. 단계 사이 <b>이탈률</b>이 높은 곳이 병목이에요. <b>입력 시작/제출</b> 단계로 "페이지엔 왔는데 입력도 안 한 사람"과 "입력하다 포기한 사람"이 구분돼요. 개인/기업 토글은 7/2 이후 데이터부터 정확해요(그 전엔 약관 단계만 구분값이 있었어요). B2B 특성상 표본이 얇으니 기간을 넓혀 보세요.</div>
     </div>
 
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">🖱 클릭 분석 <span class="hint">상단 탭 · 메인 배너 · 이벤트 참여 클릭 (7/6 수집 시작)</span></h3>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2507,7 +2512,7 @@ body {
       <div class="bh-note" style="margin-top:12px;">메인 화면에서 사용자가 실제로 <b>무엇을 누르는지</b>예요. 탭 클릭이 많은 메뉴가 관심사이고, 배너 클릭이 적으면 배너 교체 신호예요. 참여 수는 <b>실제 참여 성공</b> 기준(자격 없는 클릭 제외)이에요.</div>
     </div>
 
-    <div class="bh-panel">
+    <div class="bh-panel" data-tier="admin">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;">👥 회원별 관심 상품 <span class="hint">누가 무엇을 보고 있나 · 영업 골든리스트 (7/8 수집 시작)</span></h3>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2597,7 +2602,10 @@ const PageBehavior = (function(){
     conv:{label:'주문 전환율',key:'conv',ratio:true}
   };
   function dateMinus(dstr,days){ const d=new Date(dstr+'T00:00:00'); d.setDate(d.getDate()-days); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-  function isAllowed(){ const r=window.__sbRole; return r==='admin'||r==='staff'; }
+  function isAllowed(){ const r=window.__sbRole; return r==='admin'||r==='staff'||r==='dealer'; }
+  // 대리점 계정 뷰 (2026-09-14): 자기 몰 데이터만 · 공개 패널(사용자·세션·페이지뷰 KPI, 일자별 추이, 인기 검색어, 장바구니 TOP)만 표시
+  function isDealerMode(){ return window.__sbRole==='dealer'; }
+  let myDealerName=null; // dealers 테이블 표기 기준 (members.dealer_name과 정규화 매칭)
   const num=n=>Math.round(n||0).toLocaleString('ko-KR');
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function secToStr(s){ s=Math.round(s||0); if(s>=60){ const m=Math.floor(s/60); return m+'분 '+(s%60)+'초'; } return s+'초'; }
@@ -2680,14 +2688,11 @@ const PageBehavior = (function(){
     let dealerRowsRaw=[];
     try{
       try{
-        const [ga, dl, pg, it] = await Promise.all([
-          fetchAll('ga_daily_metrics','date'),
-          fetchAll('dealers'),
-          fetchAll('ga_page_daily'),
-          fetchAll('ga_item_daily')
-        ]);
-        gaRows = ga; dealerRowsRaw = dl; pageRows = pg; itemRows = it;
+        const [ga, dl] = await Promise.all([ fetchAll('ga_daily_metrics','date'), fetchAll('dealers') ]);
+        gaRows = ga; dealerRowsRaw = dl;
       }catch(e){ return false; }
+      try{ pageRows = await fetchAll('ga_page_daily'); }catch(e){ pageRows=[]; }
+      try{ itemRows = await fetchAll('ga_item_daily'); }catch(e){ itemRows=[]; }
       try{
         searchRows = await fetchAll('ga_search_daily');
       }catch(e){ searchRows=[]; }
@@ -2716,7 +2721,7 @@ const PageBehavior = (function(){
         clickRows = await fetchAll('ga_click_daily');
       }catch(e){ clickRows=[]; }
       try{
-        memberRows = await fetchAll('ga_member_item_daily');
+        memberRows = isDealerMode() ? [] : await fetchAll('ga_member_item_daily');
       }catch(e){ memberRows=[]; }
       try{
         // 대조표(3만+행)는 통째로 받지 않고, 화면에 등장하는 해시만 선별 조회
@@ -2877,13 +2882,18 @@ const PageBehavior = (function(){
 
   function renderKPIs(s){
     const conv = s.sessions>0 ? (s.purchases/s.sessions*100) : 0;
-    const cards=[
+    let cards=[
       ['active_users','사용자',num(s.active_users)],
       ['sessions','세션',num(s.sessions)],
       ['page_views','페이지뷰',num(s.page_views)],
       ['purchases','구매수 (주문)',num(s.purchases)],
       ['conv','주문 전환율',conv.toFixed(2)+'%']
     ];
+    if(isDealerMode()){
+      cards=cards.slice(0,3);
+      document.getElementById('bh-kpis').innerHTML = cards.map(([k,l,v])=>`<div class="bh-kpi"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join('');
+      return;
+    }
     document.getElementById('bh-kpis').innerHTML = cards.map(([k,l,v])=>`<div class="bh-kpi bh-kpi-click" data-metric="${k}"><div class="lab">${l}</div><div class="val">${v}</div><div class="bh-kpi-more">상세 보기 ›</div></div>`).join('');
     document.querySelectorAll('#bh-kpis .bh-kpi-click').forEach(el=>{ el.onclick=()=>openDetail(el.dataset.metric); });
   }
@@ -3016,11 +3026,12 @@ const PageBehavior = (function(){
     const dates=Object.keys(byDate).sort();
     const canvas=document.getElementById('bh-trend'); if(!canvas) return;
     if(chart) chart.destroy();
+    const dsets=[
+      {label:'세션',data:dates.map(d=>byDate[d].s),borderColor:'#1F4E78',backgroundColor:'rgba(31,78,120,.08)',tension:.3,borderWidth:2,pointRadius:0,fill:true,yAxisID:'y'},
+    ];
+    if(!isDealerMode()) dsets.push({label:'구매수',data:dates.map(d=>byDate[d].p),borderColor:'#70AD47',backgroundColor:'rgba(112,173,71,.08)',tension:.3,borderWidth:2,pointRadius:0,fill:true,yAxisID:'y1'});
     chart=new Chart(canvas.getContext('2d'),{ type:'line',
-      data:{ labels:dates, datasets:[
-        {label:'세션',data:dates.map(d=>byDate[d].s),borderColor:'#1F4E78',backgroundColor:'rgba(31,78,120,.08)',tension:.3,borderWidth:2,pointRadius:0,fill:true,yAxisID:'y'},
-        {label:'구매수',data:dates.map(d=>byDate[d].p),borderColor:'#70AD47',backgroundColor:'rgba(112,173,71,.08)',tension:.3,borderWidth:2,pointRadius:0,fill:true,yAxisID:'y1'},
-      ]},
+      data:{ labels:dates, datasets:dsets },
       options:{ responsive:true,maintainAspectRatio:false,
         plugins:{legend:{position:'top',align:'end',labels:{font:{family:'Pretendard',size:12},boxWidth:12,color:'#595959'}}},
         scales:{
@@ -3502,6 +3513,11 @@ const PageBehavior = (function(){
   }
   function render(){
     const rows=filteredRows(), s=sum(rows);
+    if(isDealerMode()){
+      renderKPIs(s); renderTrend(rows); renderSearch(); renderCart();
+      const rl0=document.getElementById('bh-range'); if(rl0) rl0.textContent = (curFrom||curTo) ? ((curFrom||'처음')+' ~ '+(curTo||'최신')) : (curDays>0?('최근 '+curDays+'일'):'전체 기간');
+      return;
+    }
     renderKPIs(s); renderFunnel(s); renderTrend(rows); renderMallTable(); renderDealerNew(); renderPages(); renderItems(); renderCart(); renderCrosssell(); renderItemConv(); renderSearch(); renderVisitor(); renderScroll(); renderSignup(); renderClicks(); renderMembers();
     const rl=document.getElementById('bh-range'); if(rl) rl.textContent = (curFrom||curTo) ? ((curFrom||'처음')+' ~ '+(curTo||'최신')) : (curDays>0?('최근 '+curDays+'일'):'전체 기간');
   }
@@ -3980,6 +3996,7 @@ const PageBehavior = (function(){
     const sel=document.getElementById('bh-mall');
     sel.innerHTML='<option value="all">전체 통합</option>'+dealerNames.map(n=>`<option value="${n}">${n}</option>`).join('');
     sel.value=curMall;
+    if(isDealerMode()){ sel.disabled=true; }
     if(!sel.__wired){ sel.__wired=1; sel.addEventListener('change',()=>{ curMall=sel.value; render(); }); }
     const seg=document.getElementById('bh-period');
     if(seg && !seg.__wired){ seg.__wired=1; seg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); curDays=+b.dataset.d; curFrom=null; curTo=null; const fi=document.getElementById('bh-from'), ti=document.getElementById('bh-to'); if(fi)fi.value=''; if(ti)ti.value=''; render(); })); }
@@ -4069,6 +4086,24 @@ const PageBehavior = (function(){
     if(!loaded){
       const ok=await loadData();
       if(!ok){ const e=document.getElementById('bh-empty'); if(e)e.style.display='block'; return; }
+      if(isDealerMode()){
+        // 자기 몰 고정: members.dealer_name("(주)네오스엠")과 dealers.dealer_name("네오스엠") 표기 차이를 정규화로 매칭
+        const mine=normDl(window.__sbDealer||'');
+        myDealerName = dealerNames.find(n=>normDl(n)===mine) || window.__sbDealer || null;
+        if(myDealerName){ curMall=myDealerName; curSearchMall=myDealerName; curCartMall=myDealerName; }
+        if(content) content.classList.add('dealer-mode');
+        const note=document.querySelector('#behavior-content .bh-note');
+        if(note) note.innerHTML='우리 몰 방문 행동 지표(GA4 기준) · 집계 기간 <b id="bh-datainfo">—</b> · 상세 분석 리포트는 링커에서 별도 제공합니다';
+        // 몰 선택 대신 고정 라벨
+        const sel=document.getElementById('bh-mall');
+        if(sel && !document.getElementById('bh-mall-fixed')){
+          const lab=document.createElement('span'); lab.id='bh-mall-fixed';
+          lab.style.cssText='font-size:13px;font-weight:700;color:var(--primary);padding:8px 11px;border:1px solid var(--border);border-radius:8px;background:#fff;';
+          lab.textContent=myDealerName||'내 대리점'; sel.parentNode.insertBefore(lab, sel);
+        }
+        loaded=true; buildControls(); render();
+        return;
+      }
       await buildOrderStats();   // 구매 지표는 주문 데이터(API) 기준으로 산정
       applyApiPurchases();
       loaded=true; buildControls(); render();
