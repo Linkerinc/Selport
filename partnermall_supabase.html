@@ -2707,19 +2707,26 @@ const PageBehavior = (function(){
   function normHost(h){ return String(h||'').replace(/^www\./,'').toLowerCase(); }
 
   async function fetchAll(table, orderCol){
-    // Supabase 요청당 최대 1000행 제한 대응: 빈 응답까지 페이지 반복
-    const sb=window.__sb; const out=[];
-    for(let from=0;;){
-      let q=sb.from(table).select('*').range(from, from+999);
-      if(orderCol) q=q.order(orderCol,{ascending:true});
-      const r=await q;
-      if(r.error){ if(from===0) throw r.error; break; }
-      const d=r.data||[];
-      out.push(...d);
-      if(d.length<1000) break;
-      from+=d.length;
+    // Supabase 요청당 최대 1000행 제한 대응: 전체 건수를 먼저 확인한 뒤 페이지를 동시에 받음
+    const sb=window.__sb;
+    const head=await sb.from(table).select('*',{count:'exact',head:true});
+    if(head.error) throw head.error;
+    const total=head.count||0;
+    if(!total) return [];
+    const starts=[]; for(let f=0; f<total; f+=1000) starts.push(f);
+    const parts=new Array(starts.length); let next=0;
+    async function worker(){
+      while(next<starts.length){
+        const i=next++, from=starts[i];
+        let q=sb.from(table).select('*').range(from, from+999);
+        if(orderCol) q=q.order(orderCol,{ascending:true});
+        const r=await q;
+        if(r.error){ if(i===0) throw r.error; parts[i]=[]; continue; }
+        parts[i]=r.data||[];
+      }
     }
-    return out;
+    await Promise.all(Array.from({length:Math.min(4,starts.length)}, worker));
+    return parts.flat();
   }
   async function loadData(){
     const sb=window.__sb; if(!sb) return false;
@@ -2729,46 +2736,27 @@ const PageBehavior = (function(){
         const [ga, dl] = await Promise.all([ fetchAll('ga_daily_metrics','date'), fetchAll('dealers') ]);
         gaRows = ga; dealerRowsRaw = dl;
       }catch(e){ return false; }
-      try{ pageRows = await fetchAll('ga_page_daily'); }catch(e){ pageRows=[]; }
-      try{ itemRows = await fetchAll('ga_item_daily'); }catch(e){ itemRows=[]; }
-      try{
-        searchRows = await fetchAll('ga_search_daily');
-      }catch(e){ searchRows=[]; }
-      try{
-        visitorRows = await fetchAll('ga_visitor_daily');
-      }catch(e){ visitorRows=[]; }
-      try{
-        dealerFirst = await fetchAll('dealer_first_order');
-      }catch(e){ dealerFirst=[]; }
-      try{
-        bqItemRows = await fetchAll('ga_item_bq_daily');
-      }catch(e){ bqItemRows=[]; }
-      try{
-        catRows = await fetchAll('ga_category_daily');
-      }catch(e){ catRows=[]; }
-      try{
-        itemCatRows = await fetchAll('ga_item_cat_daily');
-      }catch(e){ itemCatRows=[]; }
-      try{
-        scrollRows = await fetchAll('ga_scroll_daily');
-      }catch(e){ scrollRows=[]; }
-      try{
-        signupRows = await fetchAll('ga_signup_funnel');
-      }catch(e){ signupRows=[]; }
-      try{
-        clickRows = await fetchAll('ga_click_daily');
-      }catch(e){ clickRows=[]; }
-      try{
-        memberRows = isDealerMode() ? [] : await fetchAll('ga_member_item_daily');
-      }catch(e){ memberRows=[]; }
+      const safe=(t,o)=>fetchAll(t,o).catch(()=>[]);
+      [pageRows, itemRows, searchRows, visitorRows, dealerFirst, bqItemRows, catRows, itemCatRows, scrollRows, signupRows, clickRows, memberRows] = await Promise.all([
+        safe('ga_page_daily'), safe('ga_item_daily'), safe('ga_search_daily'), safe('ga_visitor_daily'),
+        safe('dealer_first_order'), safe('ga_item_bq_daily'), safe('ga_category_daily'), safe('ga_item_cat_daily'),
+        safe('ga_scroll_daily'), safe('ga_signup_funnel'), safe('ga_click_daily'),
+        isDealerMode() ? Promise.resolve([]) : safe('ga_member_item_daily')
+      ]);
       try{
         // 대조표(3만+행)는 통째로 받지 않고, 화면에 등장하는 해시만 선별 조회
         memberMap={};
         const hs=[...new Set(memberRows.map(r=>r.user_hash).filter(Boolean))];
-        for(let i=0;i<hs.length;i+=150){
-          const mm = await sb.from('member_hash_map').select('*').in('user_hash', hs.slice(i,i+150));
-          if(!mm.error) (mm.data||[]).forEach(m=>{ memberMap[m.user_hash]=m; });
+        const chunks=[]; for(let i=0;i<hs.length;i+=150) chunks.push(hs.slice(i,i+150));
+        let ci=0;
+        async function mw(){
+          while(ci<chunks.length){
+            const c=chunks[ci++];
+            const mm = await sb.from('member_hash_map').select('*').in('user_hash', c);
+            if(!mm.error) (mm.data||[]).forEach(m=>{ memberMap[m.user_hash]=m; });
+          }
         }
+        await Promise.all(Array.from({length:Math.min(6,chunks.length)}, mw));
       }catch(e){ memberMap={}; }
       // 구매 대조 인덱스는 백그라운드 준비 (완료 시 미구매 뱃지 표시 갱신)
       try{ ensurePurchaseIndex().then(()=>{ try{ renderMembers(); }catch(e){} }); }catch(e){}
@@ -4122,8 +4110,15 @@ const PageBehavior = (function(){
     if(!isAllowed()){ if(denied)denied.style.display='block'; if(content)content.style.display='none'; return; }
     if(denied)denied.style.display='none'; if(content)content.style.display='block';
     if(!loaded){
+      let ld=document.getElementById('bh-loading');
+      if(!ld && content){
+        ld=document.createElement('div'); ld.id='bh-loading';
+        ld.style.cssText='margin:12px 0;padding:14px 18px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#f8fafc;font-size:13px;color:#475569;';
+        content.insertBefore(ld, content.firstChild);
+      }
+      if(ld) ld.textContent='⏳ 행동 데이터(GA4) 불러오는 중…';
       const ok=await loadData();
-      if(!ok){ const e=document.getElementById('bh-empty'); if(e)e.style.display='block'; return; }
+      if(!ok){ if(ld) ld.remove(); const e=document.getElementById('bh-empty'); if(e)e.style.display='block'; return; }
       if(isDealerMode()){
         // 자기 몰 고정: members.dealer_name("(주)네오스엠")과 dealers.dealer_name("네오스엠") 표기 차이를 정규화로 매칭
         const mine=normDl(window.__sbDealer||'');
@@ -4139,11 +4134,19 @@ const PageBehavior = (function(){
           lab.style.cssText='font-size:13px;font-weight:700;color:var(--primary);padding:8px 11px;border:1px solid var(--border);border-radius:8px;background:#fff;';
           lab.textContent=myDealerName||'내 대리점'; sel.parentNode.insertBefore(lab, sel);
         }
+        if(ld) ld.remove();
         loaded=true; buildControls(); render();
         return;
       }
+      if(window.__ordersReady && !window.__ordersReadyDone){
+        if(ld) ld.textContent='⏳ 구매 지표 계산을 위해 주문 데이터 준비 중… (오른쪽 아래 진행 표시 참고)';
+        const okOrders=await window.__ordersReady;
+        if(!okOrders) return;
+      }
+      if(ld) ld.textContent='⏳ 구매 지표 계산 중…';
       await buildOrderStats();   // 구매 지표는 주문 데이터(API) 기준으로 산정
       applyApiPurchases();
+      if(ld) ld.remove();
       loaded=true; buildControls(); render();
     }
   }
@@ -4152,7 +4155,7 @@ const PageBehavior = (function(){
 
 let currentPage = 'dashboard';
 
-const NEEDS_ORDERS = { data:1, bestseller:1, sales:1, companies:1, behavior:1 };
+const NEEDS_ORDERS = { data:1, bestseller:1, sales:1, companies:1 };
 async function switchPage(pageId) {
   if (!PAGE_META[pageId]) return;
   if (pageId === 'data' && window.__sbRole !== 'admin') pageId = 'dashboard';
