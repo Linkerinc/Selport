@@ -2817,12 +2817,11 @@ const PageBehavior = (function(){
   async function buildOrderStats(){
     // 구매수(대리점·일자별)와 신규 회원사 집계를 서버에서 계산해 받음 (주문 원본 다운로드 불필요)
     if(ordDayMap) return;
-    const sb=window.__sb;
-    const [d,c]=await Promise.all([ sb.rpc('bh_order_day'), sb.rpc('bh_comp_new') ]);
-    ordDayMap = (d && !d.error && d.data) ? d.data : {};
-    compNew = (c && !c.error) ? (c.data || null) : null;
-    if(d && d.error) console.error('bh_order_day 오류:', d.error);
-    if(c && c.error) console.error('bh_comp_new 오류:', c.error);
+    const r=await window.__sb.rpc('bh_order_stats');   // 저장된 계산 결과(캐시) 우선 반환
+    if(r && r.error) console.error('bh_order_stats 오류:', r.error);
+    const p=(r && !r.error && r.data) || {};
+    ordDayMap = p.day || {};
+    compNew = p.comp || null;
   }
   function computeCompNew(list){
     compNew=null;
@@ -4141,11 +4140,11 @@ const PageBehavior = (function(){
         loaded=true; buildControls(); render();
         return;
       }
-      if(ld) ld.textContent='⏳ 구매 지표 계산 중…';
-      await buildOrderStats();   // 구매 지표는 주문 데이터(API) 기준으로 산정
-      applyApiPurchases();
-      if(ld) ld.remove();
+      // GA 지표로 화면을 먼저 그리고, 구매수(주문 기준)는 계산되는 대로 채움
       loaded=true; buildControls(); render();
+      if(ld) ld.textContent='⏳ 구매수(주문 기준) 반영 중… 끝나면 화면이 자동으로 갱신돼요';
+      buildOrderStats().then(()=>{ applyApiPurchases(); if(ld) ld.remove(); render(); })
+        .catch(e=>{ console.error(e); if(ld) ld.textContent='⚠ 구매수 계산에 실패했어요. 새로고침 후 다시 시도해주세요.'; });
     }
   }
   return { init };
