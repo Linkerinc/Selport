@@ -1256,22 +1256,38 @@ body {
 
   function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open('PartnermallAnalyzer',1);r.onerror=()=>rej(r.error);r.onsuccess=()=>res(r.result);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('orders')){const s=d.createObjectStore('orders',{keyPath:'_key'});s.createIndex('orderNo','주문번호');s.createIndex('yearMonth','_yearMonth');s.createIndex('company','주문자업체명');}if(!d.objectStoreNames.contains('meta')){d.createObjectStore('meta',{keyPath:'key'});}};});}
 
-  async function fillFromSupabase(){
-    loginBox.style.display='none'; loadingBox.style.display='block';
-    const prog=$('sb-progress');
-    // 권한 확인: 대리점(dealer) 계정이면 본인 대리점 주문만 내려받음
-    let myDealer=null;
-    try{ const me=await getMyRole(); if(me.role==='dealer' && me.dealer_name) myDealer=me.dealer_name; }catch(e){}
-
+  // ===== 주문 원본 백그라운드 동기화 (화면은 먼저 열고, 원본은 뒤에서 받음) =====
+  let __ordersResolve;
+  window.__ordersReadyDone=false;
+  window.__ordersReady=new Promise(r=>{ __ordersResolve=r; });
+  function syncPill(){
+    let p=document.getElementById('sb-sync-pill');
+    if(!p){
+      p=document.createElement('div'); p.id='sb-sync-pill';
+      p.style.cssText='position:fixed;right:16px;bottom:16px;z-index:9998;background:#1a1d23;color:#e6e8eb;border:1px solid #2a2e37;border-radius:999px;padding:9px 16px;font-size:12px;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.18);';
+      document.body.appendChild(p);
+    }
+    return p;
+  }
+  function setProg(t){
+    window.__ordersProgress=t;
+    syncPill().textContent='⏳ '+t;
+    document.querySelectorAll('.orders-wait-msg').forEach(el=>{ el.textContent=t; });
+  }
+  async function syncOrders(me, uid){
+    const myDealer=(me.role==='dealer' && me.dealer_name) ? me.dealer_name : null;
     const db=await openDB();
     const metaGet=(key)=>new Promise((res)=>{ try{ const r=db.transaction('meta').objectStore('meta').get(key); r.onsuccess=()=>res(r.result?r.result.value:null); r.onerror=()=>res(null); }catch(e){ res(null); } });
     const metaSet=(key,value)=>new Promise((res)=>{ try{ const t=db.transaction('meta','readwrite'); t.objectStore('meta').put({key,value}); t.oncomplete=()=>res(); t.onerror=()=>res(); }catch(e){ res(); } });
-    const localCount=await new Promise((res)=>{ try{ const r=db.transaction('orders').objectStore('orders').count(); r.onsuccess=()=>res(r.result||0); r.onerror=()=>res(0); }catch(e){ res(0); } });
+    let localCount=await new Promise((res)=>{ try{ const r=db.transaction('orders').objectStore('orders').count(); r.onsuccess=()=>res(r.result||0); r.onerror=()=>res(0); }catch(e){ res(0); } });
 
     // 증분 로딩 조건: 이 브라우저에 이전 데이터 + 워터마크가 있고, 대리점 필터도 같을 때
     const wm=await metaGet('sbSyncWatermark');
     const wmDealer=await metaGet('sbSyncDealer');
-    const incremental = !!(wm && localCount>0 && (wmDealer||null)===(myDealer||null));
+    const wmUser=await metaGet('sbCacheUser');
+    // 다른 계정의 캐시가 남아 있으면 즉시 비움 (계정 간 데이터 섞임 방지)
+    if(localCount>0 && wmUser!==uid){ await new Promise(r=>{ try{ const t=db.transaction('orders','readwrite'); t.objectStore('orders').clear(); t.oncomplete=r; t.onerror=r; }catch(e){ r(); } }); localCount=0; }
+    const incremental = !!(wm && localCount>0 && wmUser===uid && (wmDealer||null)===(myDealer||null));
 
     const PAGE_TARGET=5000, CONC=3; // Supabase Max Rows가 1000이면 아래에서 자동으로 1000으로 낮춤
     function buildQuery(){
@@ -1287,7 +1303,7 @@ body {
       if(incremental) q=q.gte('_synced_at', wm);
       const c=await q; total=c.count||0;
     }catch(e){}
-    prog.textContent = incremental ? ('변경분 확인 중… (약 '+total.toLocaleString()+'건)') : '전체 데이터 내려받는 중…';
+    setProg(incremental ? '변경분 확인 중…' : '주문 데이터 내려받는 중…');
 
     const results=[]; let loaded=0;
     async function fetchRange(from,size){
@@ -1312,13 +1328,13 @@ body {
           const froms=[]; for(let k=0;k<CONC;k++) froms.push(offset+k*effPage);
           const batch=await Promise.all(froms.map(f=>fetchRange(f,effPage)));
           for(const d of batch){ results.push(d); loaded+=d.length; if(d.length<effPage) done=true; }
-          prog.textContent=(incremental?'변경분 ':'')+loaded.toLocaleString()+' / '+(total?total.toLocaleString():'?')+' 건';
+          setProg((incremental?'변경분 ':'주문 데이터 ')+loaded.toLocaleString()+' / '+(total?total.toLocaleString():'?')+' 건');
           offset+=CONC*effPage;
           if(offset>2000000) break;
         }
       }
-    }catch(e){ prog.innerHTML='데이터 읽기 오류: '+(e.message||e)+'<br><br><button onclick="location.reload()" style="padding:8px 14px;border-radius:8px;border:0;background:#3b6ef5;color:#fff;cursor:pointer;">다시 시도</button>'; return; }
-    prog.textContent='저장하는 중…';
+    }catch(e){ throw new Error('주문 데이터 읽기 오류: '+(e.message||e)); }
+    setProg('주문 데이터 저장 중…');
     let maxSynced=wm||null;
     try{
       await new Promise((res,rej)=>{
@@ -1336,10 +1352,23 @@ body {
       });
       if(maxSynced) await metaSet('sbSyncWatermark', maxSynced);
       await metaSet('sbSyncDealer', myDealer||null);
+      await metaSet('sbCacheUser', uid);
       db.close();
-    }catch(e){ prog.innerHTML='저장 오류: '+(e.message||e); return; }
-    sessionStorage.setItem('sb_loaded','1');
-    location.reload();
+    }catch(e){ throw new Error('주문 데이터 저장 오류: '+(e.message||e)); }
+  }
+  async function startOrdersSync(me, uid){
+    try{
+      await syncOrders(me, uid);
+      sessionStorage.setItem('sb_loaded','1');
+      window.__ordersReadyDone=true;
+      const p=syncPill(); p.textContent='✓ 주문 데이터 최신'; setTimeout(()=>{ p.style.transition='opacity .4s'; p.style.opacity='0'; setTimeout(()=>p.remove(),400); },1800);
+      __ordersResolve(true);
+    }catch(e){
+      console.error(e);
+      const p=syncPill(); p.style.background='#7f1d1d';
+      p.innerHTML='⚠ '+(e.message||e)+' <button onclick="location.reload()" style="margin-left:8px;padding:3px 10px;border:0;border-radius:999px;background:#fff;color:#7f1d1d;cursor:pointer;font-size:12px;">다시 시도</button>';
+      document.querySelectorAll('.orders-wait-msg').forEach(el=>{ el.textContent='주문 데이터를 불러오지 못했습니다. 오른쪽 아래 [다시 시도]를 눌러주세요.'; });
+    }
   }
 
   async function getMyRole(){
@@ -1377,7 +1406,7 @@ body {
     rptBtn.style.cssText='padding:6px 12px;border:1px solid var(--border,#2a2e37);border-radius:6px;background:transparent;color:var(--text-sub,#64748b);font-size:12px;cursor:pointer;white-space:nowrap;';
     const menu=document.createElement('div');
     menu.style.cssText='position:absolute;right:0;top:115%;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.14);padding:6px;display:none;z-index:9999;min-width:150px;';
-    const mkItem=(txt,fn)=>{ const a=document.createElement('div'); a.textContent=txt; a.style.cssText='padding:9px 12px;font-size:13px;color:#222;cursor:pointer;border-radius:6px;white-space:nowrap;'; a.onmouseenter=()=>a.style.background='#f1f5f9'; a.onmouseleave=()=>a.style.background='transparent'; a.onclick=()=>{ menu.style.display='none'; if(window.__report) fn(); else alert('잠시 후 다시 시도해주세요 (데이터 준비 중)'); }; return a; };
+    const mkItem=(txt,fn)=>{ const a=document.createElement('div'); a.textContent=txt; a.style.cssText='padding:9px 12px;font-size:13px;color:#222;cursor:pointer;border-radius:6px;white-space:nowrap;'; a.onmouseenter=()=>a.style.background='#f1f5f9'; a.onmouseleave=()=>a.style.background='transparent'; a.onclick=()=>{ menu.style.display='none'; if(window.__report && window.__ordersReadyDone) fn(); else alert('주문 데이터를 준비하는 중입니다. 오른쪽 아래 표시가 사라진 뒤 다시 눌러주세요.'); }; return a; };
     menu.appendChild(mkItem('📊 엑셀 요약', ()=>window.__report.xlsx()));
     menu.appendChild(mkItem('📄 보고용 리포트 (PDF/HTML)', ()=>window.__report.pdf()));
     menu.appendChild(mkItem('🗂 상세 데이터 (PDF)', ()=>window.__report.pdfDetail()));
@@ -1388,26 +1417,34 @@ body {
     bar.insertBefore(box, bar.firstChild);
   }
 
+  // 부팅 조율: 화면(DOM)과 로그인 확인이 둘 다 끝나면 첫 화면(대시보드) 진입
+  window.__selportBoot={dom:false, auth:false, started:false};
+  window.__selportTryStart=function(){
+    const b=window.__selportBoot;
+    if(b.dom && b.auth && !b.started && typeof window.switchPage==='function'){ b.started=true; window.switchPage('dashboard'); }
+  };
+
   async function revealTool(){
+    const { data:{ session } }=await sb.auth.getSession();
     const me=await getMyRole();
     window.__sbRole = me.role || null;
     window.__sbDealer = me.dealer_name || null;
     injectHeaderUI(me.role, me.dealer_name);
+    const td=document.querySelector('#main-tabs .tab[data-page="data"]');
+    if(td) td.style.display = (me.role==='admin') ? '' : 'none';
     const tb=document.getElementById('tab-behavior');
     if(tb) tb.style.display = (me.role==='admin'||me.role==='staff'||me.role==='dealer') ? '' : 'none';
     const ta=document.getElementById('tab-ai');
     if(ta) ta.style.display = (me.role==='admin') ? '' : 'none';
-    const meta=document.getElementById('header-meta'); const start=Date.now();
-    const t=setInterval(()=>{
-      const txt=meta?meta.textContent:'';
-      const ready=(txt && txt.indexOf('로드 중')<0 && txt.trim()!=='');
-      if(ready || Date.now()-start>5000){ clearInterval(t); gate.style.display='none'; }
-    },200);
+    gate.style.display='none';
+    window.__selportBoot.auth=true;
+    window.__selportTryStart();
+    startOrdersSync(me, session ? session.user.id : null);
   }
 
   window.sbLogout=async()=>{
+    // 주문 캐시는 남겨둠 → 같은 계정 재로그인 시 변경분만 받음. 다른 계정 로그인 시 자동으로 비움.
     sessionStorage.removeItem('sb_loaded');
-    try{ const db=await openDB(); await new Promise(r=>{const t=db.transaction('orders','readwrite');t.objectStore('orders').clear();t.oncomplete=r;t.onerror=r;}); db.close(); }catch(e){}
     await sb.auth.signOut(); location.reload();
   };
 
@@ -1419,7 +1456,7 @@ body {
     const r=await sb.auth.signInWithPassword({email,password:pw});
     btn.disabled=false; btn.textContent='로그인';
     if(r.error){ msg.textContent='로그인 실패: '+r.error.message; return; }
-    await fillFromSupabase();
+    await revealTool();
   };
   $('sb-password').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sb-loginBtn').click(); });
 
@@ -1427,8 +1464,9 @@ body {
     let session=null;
     try{ const r=await sb.auth.getSession(); session=r.data.session; }catch(e){}
     if(!session){ loginBox.style.display='block'; loadingBox.style.display='none'; return; }
-    if(sessionStorage.getItem('sb_loaded')==='1'){ await revealTool(); return; }
-    await fillFromSupabase();
+    loginBox.style.display='none'; loadingBox.style.display='block';
+    $('sb-progress').textContent='접속 중…';
+    await revealTool();
   })();
 })();
 </script>
@@ -1438,7 +1476,7 @@ body {
 <header class="app-header">
   <h1>
     3M 파트너몰 통합 분석
-    <span class="subtitle" id="page-subtitle">데이터 인프라</span>
+    <span class="subtitle" id="page-subtitle">분석 · 대시보드</span>
   </h1>
   <div class="header-actions">
     <span class="header-meta" id="header-meta">데이터 로드 중...</span>
@@ -1447,7 +1485,7 @@ body {
 
 <!-- 통합 탭 네비 -->
 <nav class="tabs" id="main-tabs">
-  <div class="tab active" data-page="data">📁 데이터 관리</div>
+  <div class="tab" data-page="data" style="display:none">📁 데이터 관리</div>
   <div class="tab" data-page="dashboard">📊 대시보드</div>
   <div class="tab" data-page="bestseller">🏆 베스트셀러</div>
   <div class="tab" data-page="sales">💰 매출 분석</div>
@@ -1458,7 +1496,7 @@ body {
 
 
 <!-- ============== 페이지: data ============== -->
-<div class="page-panel page-data active" id="panel-data" data-page="data">
+<div class="page-panel page-data" id="panel-data" data-page="data">
 <main class="app-main">
 
   <!-- 데이터 현황 바 -->
@@ -4112,10 +4150,12 @@ const PageBehavior = (function(){
   return { init };
 })();
 
-let currentPage = 'data';
+let currentPage = 'dashboard';
 
+const NEEDS_ORDERS = { data:1, bestseller:1, sales:1, companies:1, behavior:1 };
 async function switchPage(pageId) {
   if (!PAGE_META[pageId]) return;
+  if (pageId === 'data' && window.__sbRole !== 'admin') pageId = 'dashboard';
   
   // 패널 전환
   document.querySelectorAll('.page-panel').forEach(p => p.classList.remove('active'));
@@ -4132,6 +4172,22 @@ async function switchPage(pageId) {
   if (sub) sub.textContent = PAGE_META[pageId].title;
   
   currentPage = pageId;
+
+  // 주문 원본이 필요한 탭은 백그라운드 동기화가 끝날 때까지 대기 안내
+  if (NEEDS_ORDERS[pageId] && window.__ordersReady && !window.__ordersReadyDone) {
+    let w = targetPanel && targetPanel.querySelector('.orders-wait');
+    if (targetPanel && !w) {
+      w = document.createElement('div');
+      w.className = 'orders-wait';
+      w.style.cssText = 'margin:48px auto;max-width:420px;text-align:center;padding:28px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#fff;';
+      w.innerHTML = '<div style="font-size:15px;font-weight:700;margin-bottom:8px;">주문 데이터 준비 중</div><div class="orders-wait-msg" style="font-size:13px;color:#64748b;"></div><div style="font-size:12px;color:#94a3b8;margin-top:10px;">대시보드는 바로 이용할 수 있어요. 준비가 끝나면 이 화면이 자동으로 열립니다.</div>';
+      targetPanel.insertBefore(w, targetPanel.firstChild);
+    }
+    if (w) w.querySelector('.orders-wait-msg').textContent = window.__ordersProgress || '불러오는 중…';
+    const ok = await window.__ordersReady;
+    if (w) w.remove();
+    if (!ok || currentPage !== pageId) return;
+  }
   
   // 해당 페이지 모듈 init 호출
   try {
@@ -4170,8 +4226,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // 초기 페이지: data
-  switchPage('data');
+  // 초기 페이지: 로그인 확인 후 대시보드 (게이트가 __selportTryStart 호출)
+  window.switchPage = switchPage;
+  if (window.__selportBoot) { window.__selportBoot.dom = true; window.__selportTryStart(); }
 });
 
 
@@ -4829,18 +4886,17 @@ function statusCategory(status) {
   return 'other';
 }
 
+// ===== 서버 집계 방식 (Supabase RPC: dash_meta / dash_summary) =====
+let meta = null;          // dash_meta 결과
+let summary = null;       // dash_summary 결과
+let reqSeq = 0;           // 필터를 빠르게 바꿀 때 늦게 온 이전 응답 무시용
+const EMPTY_SUMMARY = { lines:0, completed_lines:0, revenue:0, order_count:0, completed_orders:0, companies:0, by_dealer:[], monthly:[], daily:[] };
+function parseYmd(s) { return s ? new Date(s + 'T00:00:00') : null; }
+
 function buildDealerList() {
-  const dealerStats = new Map();
-  for (const row of allOrders) {
-    if (row['처리상태'] !== '완료') continue;
-    const d = row['주문가맹점'];
-    if (!d) continue;
-    if (!dealerStats.has(d)) dealerStats.set(d, { name: d, revenue: 0, orders: 0 });
-    const s = dealerStats.get(d);
-    s.revenue += parseFloat(row['상품금액']) || 0;
-    s.orders++;
-  }
-  allDealers = [...dealerStats.values()].filter(d => window.isRegisteredDealerName(d.name)).sort((a, b) => b.revenue - a.revenue);
+  allDealers = (meta.dealers || [])
+    .map(d => ({ name: d.name, revenue: +d.revenue || 0, orders: +d.orders || 0 }))
+    .filter(d => window.isRegisteredDealerName(d.name));
   selectedDealers = new Set(allDealers.map(d => d.name));
   renderDealerList();
 }
@@ -4892,114 +4948,67 @@ function updateDealerTrigger() {
   }
 }
 
-function applyFilter() {
+async function applyFilter() {
   const from = document.getElementById('dash-date-from').value;
   const to = document.getElementById('dash-date-to').value;
-  let working = allOrders;
-  
-  if (from && to) {
-    // 'YYYY-MM-DD'를 로컬(한국) 자정으로 파싱 — new Date(문자열)은 UTC 자정(KST 09:00)이 되어
-    // 시작일 당일 주문이 통째로 빠지는 버그가 있었음 (2026-07-21 수정)
-    const fromDate = new Date(from + 'T00:00:00');
-    const toDate = new Date(to + 'T00:00:00');
-    toDate.setHours(23, 59, 59);
-    working = working.filter(row => {
-      const d = rowDate(row);
-      return d && d >= fromDate && d <= toDate;
+  const my = ++reqSeq;
+  let result;
+  if (selectedDealers.size === 0) {
+    result = EMPTY_SUMMARY;
+  } else {
+    const dealers = (selectedDealers.size === allDealers.length) ? null : [...selectedDealers];
+    document.getElementById('dash-filter-summary').innerHTML = '<span style="color:var(--text-mute)">계산 중…</span>';
+    const { data, error } = await window.__sb.rpc('dash_summary', {
+      p_from: (from && to) ? from : null,
+      p_to: (from && to) ? to : null,
+      p_dealers: dealers
     });
+    if (my !== reqSeq) return; // 더 최신 요청이 있음
+    if (error) {
+      console.error('dash_summary 오류:', error);
+      document.getElementById('dash-filter-summary').innerHTML = `<span style="color:#dc2626">집계 오류: ${error.message}</span>`;
+      return;
+    }
+    result = data || EMPTY_SUMMARY;
   }
-  
-  if (selectedDealers.size > 0 && selectedDealers.size < allDealers.length) {
-    working = working.filter(row => selectedDealers.has(row['주문가맹점']));
-  } else if (selectedDealers.size === 0) {
-    working = [];
-  }
-  
-  filteredOrders = working;
-  const completedOrders = working.filter(r => r['처리상태'] === '완료');
-  
-  document.getElementById('dash-filter-summary').innerHTML = 
-    `필터 결과: 전체 <strong>${formatNumber(working.length)}건</strong> · 완료 <strong>${formatNumber(completedOrders.length)}건</strong>`;
-  
+  if (my !== reqSeq) return;
+  summary = result;
+  document.getElementById('dash-filter-summary').innerHTML =
+    `필터 결과: 전체 <strong>${formatNumber(summary.lines)}건</strong> · 완료 <strong>${formatNumber(summary.completed_lines)}건</strong>`;
   renderKPIs();
   renderChart();
   renderKPIDetails();
 }
 
 function renderKPIs() {
-  const completed = filteredOrders.filter(r => r['처리상태'] === '완료');
-  const totalRevenue = completed.reduce((s, r) => s + (parseFloat(r['상품금액']) || 0), 0);
-  const orderSet = new Set(filteredOrders.map(r => r['주문번호']));
-  const orderCount = orderSet.size;
-  const completedOrderSet = new Set(completed.map(r => r['주문번호']));
-  const aov = completedOrderSet.size > 0 ? totalRevenue / completedOrderSet.size : 0;
-  const companySet = new Set(completed.map(r => r['주문자업체명']).filter(Boolean));
-  const companyCount = companySet.size;
-  
+  const totalRevenue = +summary.revenue || 0;
+  const orderCount = +summary.order_count || 0;
+  const aov = summary.completed_orders > 0 ? totalRevenue / summary.completed_orders : 0;
+  const companyCount = +summary.companies || 0;
   document.getElementById('kpi-revenue').innerHTML = `${formatMoney(totalRevenue)}<span class="kpi-unit">원</span>`;
   document.getElementById('kpi-revenue-sub').innerHTML = `<span style="color:var(--text-mute)">전체: ${formatMoneyFull(totalRevenue)}원</span>`;
   document.getElementById('kpi-orders').innerHTML = `${formatNumber(orderCount)}<span class="kpi-unit">건</span>`;
-  document.getElementById('kpi-orders-sub').innerHTML = `<span style="color:var(--text-mute)">전체 처리상태 합산 (라인 ${formatNumber(filteredOrders.length)}건)</span>`;
+  document.getElementById('kpi-orders-sub').innerHTML = `<span style="color:var(--text-mute)">전체 처리상태 합산 (라인 ${formatNumber(summary.lines)}건)</span>`;
   document.getElementById('kpi-aov').innerHTML = `${formatMoney(aov)}<span class="kpi-unit">원</span>`;
   document.getElementById('kpi-aov-sub').innerHTML = `<span style="color:var(--text-mute)">완료 주문 1건당 평균</span>`;
   document.getElementById('kpi-companies').innerHTML = `${formatNumber(companyCount)}<span class="kpi-unit">개사</span>`;
   document.getElementById('kpi-companies-sub').innerHTML = `<span style="color:var(--text-mute)">활동 회원사 (완료 기준)</span>`;
 }
 
-function dealerAggregate(data, valueFn) {
-  const map = new Map();
-  for (const row of data) {
-    const d = row['주문가맹점'];
-    if (!d) continue;
-    map.set(d, (map.get(d) || 0) + valueFn(row));
-  }
-  return [...map.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-}
-
 function renderKPIDetails() {
-  const completed = filteredOrders.filter(r => r['처리상태'] === '완료');
-  
-  // 매출
-  const revByDealer = dealerAggregate(completed, r => parseFloat(r['상품금액']) || 0);
-  const maxRev = Math.max(...revByDealer.map(d => d.value), 1);
-  renderBarList('detail-revenue', revByDealer, maxRev, v => formatMoney(v) + '원');
-  
-  // 주문 stack
+  const rows = (summary.by_dealer || []).filter(d => d.completed_lines > 0);
+  const byDesc = (arr) => arr.sort((a, b) => b.value - a.value);
+
+  const revByDealer = byDesc(rows.map(d => ({ name: d.name, value: +d.revenue || 0 })));
+  renderBarList('detail-revenue', revByDealer, Math.max(...revByDealer.map(d => d.value), 1), v => formatMoney(v) + '원');
+
   renderOrderStackDetail();
-  
-  // AOV
-  const aovByDealer = [];
-  const dealerStats = new Map();
-  for (const row of completed) {
-    const d = row['주문가맹점'];
-    if (!d) continue;
-    if (!dealerStats.has(d)) dealerStats.set(d, { revenue: 0, orderSet: new Set() });
-    const s = dealerStats.get(d);
-    s.revenue += parseFloat(row['상품금액']) || 0;
-    s.orderSet.add(row['주문번호']);
-  }
-  for (const [name, s] of dealerStats) {
-    const aov = s.orderSet.size > 0 ? s.revenue / s.orderSet.size : 0;
-    aovByDealer.push({ name, value: aov });
-  }
-  aovByDealer.sort((a, b) => b.value - a.value);
-  const maxAov = Math.max(...aovByDealer.map(d => d.value), 1);
-  renderBarList('detail-aov', aovByDealer, maxAov, v => formatMoney(v) + '원');
-  
-  // 회원사
-  const companyByDealer = [];
-  const dealerCompanies = new Map();
-  for (const row of completed) {
-    const d = row['주문가맹점'];
-    const c = row['주문자업체명'];
-    if (!d || !c) continue;
-    if (!dealerCompanies.has(d)) dealerCompanies.set(d, new Set());
-    dealerCompanies.get(d).add(c);
-  }
-  for (const [name, s] of dealerCompanies) companyByDealer.push({ name, value: s.size });
-  companyByDealer.sort((a, b) => b.value - a.value);
-  const maxCo = Math.max(...companyByDealer.map(d => d.value), 1);
-  renderBarList('detail-companies', companyByDealer, maxCo, v => formatNumber(v) + '개사');
+
+  const aovByDealer = byDesc(rows.map(d => ({ name: d.name, value: d.completed_orders > 0 ? (+d.revenue || 0) / d.completed_orders : 0 })));
+  renderBarList('detail-aov', aovByDealer, Math.max(...aovByDealer.map(d => d.value), 1), v => formatMoney(v) + '원');
+
+  const companyByDealer = byDesc(rows.filter(d => d.companies > 0).map(d => ({ name: d.name, value: +d.companies })));
+  renderBarList('detail-companies', companyByDealer, Math.max(...companyByDealer.map(d => d.value), 1), v => formatNumber(v) + '개사');
 }
 
 function renderBarList(containerId, data, max, valueFmt) {
@@ -5024,24 +5033,13 @@ function renderBarList(containerId, data, max, valueFmt) {
 }
 
 function renderOrderStackDetail() {
-  const stats = new Map();
-  for (const row of filteredOrders) {
-    const d = row['주문가맹점'];
-    if (!d) continue;
-    if (!stats.has(d)) {
-      stats.set(d, { complete: new Set(), cancel: new Set(), shipping: new Set(), ordered: new Set(), other: new Set() });
-    }
-    const cat = statusCategory(row['처리상태']);
-    stats.get(d)[cat].add(row['주문번호']);
-  }
-  const arr = [];
-  for (const [name, s] of stats) {
-    const c1 = s.complete.size, c2 = s.cancel.size, c3 = s.shipping.size, c4 = s.ordered.size, c5 = s.other.size;
-    arr.push({ name, complete: c1, cancel: c2, shipping: c3, ordered: c4, other: c5, total: c1+c2+c3+c4+c5 });
-  }
+  const arr = (summary.by_dealer || []).map(s => {
+    const c1 = +s.complete, c2 = +s.cancel, c3 = +s.shipping, c4 = +s.ordered, c5 = +s.other;
+    return { name: s.name, complete: c1, cancel: c2, shipping: c3, ordered: c4, other: c5, total: c1+c2+c3+c4+c5 };
+  }).filter(d => d.total > 0);
   arr.sort((a, b) => b.total - a.total);
   const maxTotal = Math.max(...arr.map(d => d.total), 1);
-  
+
   const container = document.getElementById('detail-orders');
   container.classList.add('dealer-stack-list');
   if (arr.length === 0) {
@@ -5069,22 +5067,15 @@ function renderOrderStackDetail() {
 }
 
 function renderChart() {
-  const completed = filteredOrders.filter(r => r['처리상태'] === '완료');
-  const groups = {};
-  for (const row of completed) {
-    const d = rowDate(row);
-    if (!d) continue;
-    const key = currentGranularity === 'month' ? ym(d) : ymd(d);
-    groups[key] = (groups[key] || 0) + (parseFloat(row['상품금액']) || 0);
-  }
-  const labels = Object.keys(groups).sort();
-  const values = labels.map(k => groups[k]);
-  
-  document.getElementById('chart-subtitle').textContent = 
+  const series = (currentGranularity === 'month' ? summary.monthly : summary.daily) || [];
+  const labels = series.map(p => p.k);
+  const values = series.map(p => +p.v || 0);
+
+  document.getElementById('chart-subtitle').textContent =
     `${currentGranularity === 'month' ? '월별' : '일별'} 매출 (완료 주문 기준) · ${labels.length}개 데이터 포인트`;
-  
+
   if (revenueChart) revenueChart.destroy();
-  
+
   const ctx = document.getElementById('revenue-chart').getContext('2d');
   revenueChart = new Chart(ctx, {
     type: currentGranularity === 'month' ? 'bar' : 'line',
@@ -5131,14 +5122,7 @@ function renderChart() {
 }
 
 function setQuickRange(range) {
-  if (allOrders.length === 0) return;
-  let maxDate = null;
-  for (const row of allOrders) {
-    const d = rowDate(row);
-    if (!d) continue;
-    if (!maxDate || d > maxDate) maxDate = d;
-  }
-  if (!maxDate) maxDate = new Date();
+  const maxDate = parseYmd(meta && meta.max_date) || new Date();
   let fromDate;
   switch(range) {
     case '1m': fromDate = new Date(maxDate); fromDate.setMonth(fromDate.getMonth() - 1); break;
@@ -5148,12 +5132,7 @@ function setQuickRange(range) {
     case 'ytd': fromDate = new Date(maxDate.getFullYear(), 0, 1); break;
     case 'all':
     default:
-      let minDate = maxDate;
-      for (const row of allOrders) {
-        const d = rowDate(row);
-        if (d && d < minDate) minDate = d;
-      }
-      fromDate = minDate;
+      fromDate = parseYmd(meta && meta.min_date) || maxDate;
   }
   document.getElementById('dash-date-from').value = ymd(fromDate);
   document.getElementById('dash-date-to').value = ymd(maxDate);
@@ -5199,38 +5178,34 @@ function setupDealerFilter() {
   });
 }
 
-
-
   let __initialized = false;
-  
+
   async function init() {
-    if (__initialized) {
-      // 데이터 새로고침만 수행
-      if (typeof reload === 'function') await reload();
-      else if (typeof refresh === 'function') await refresh();
-      return;
-    }
+    if (__initialized) return;   // 서버 집계라 재진입 시 다시 받을 필요 없음 (필터 변경 시에만 재조회)
 
   try {
-    await openDB();
-    allOrders = await loadAllOrders();
-    
-    if (allOrders.length === 0) {
+    const [metaRes] = await Promise.all([
+      window.__sb.rpc('dash_meta'),
+      window.loadDealerWhitelist()
+    ]);
+    if (metaRes.error) throw metaRes.error;
+    meta = metaRes.data || { total_rows: 0, dealers: [] };
+
+    if (!meta.total_rows) {
       document.getElementById('dash-no-data').style.display = 'block';
       document.getElementById('dash-main-content').style.display = 'none';
       document.getElementById('header-meta').textContent = '데이터 없음';
       return;
     }
-    
-    document.getElementById('header-meta').textContent = `${formatNumber(allOrders.length)}건 누적`;
+
+    document.getElementById('header-meta').textContent = `${formatNumber(meta.total_rows)}건 누적 · ${formatNumber(meta.companies)}개사`;
     document.getElementById('dash-main-content').style.display = 'block';
-    
-    await window.loadDealerWhitelist();
+
     buildDealerList();
     updateDealerTrigger();
     setupDealerFilter();
     setupKPICardToggle();
-    
+
     __$$('.quick-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         __$$('.quick-btn').forEach(b => b.classList.remove('active'));
@@ -5251,15 +5226,16 @@ function setupDealerFilter() {
         __$$('.chart-toggle').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentGranularity = btn.dataset.granularity;
-        renderChart();
+        if (summary) renderChart();
       });
     });
-    
+
     setQuickRange('all');
-    
+
   } catch (err) {
-    console.error('초기화 실패:', err);
-    document.getElementById('header-meta').textContent = '오류: ' + err.message;
+    console.error('대시보드 초기화 실패:', err);
+    document.getElementById('header-meta').textContent = '오류: ' + (err.message || err);
+    return;
   }
 
     __initialized = true;
